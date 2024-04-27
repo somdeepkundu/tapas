@@ -1,0 +1,328 @@
+var mapPanel = ui.Map();
+var mainPanel = ui.Panel({
+  style: {
+    width: '500px',
+    border: '3px solid #888',
+    
+  }
+});   
+var title = ui.Label({
+  value: 'Tapas - The LST Explorer' ,
+  style: {fontSize: '35px', 
+          fontFamily: 'serif', 
+          color: 'd10901', //Red
+          margin: '0 auto',
+          padding: '10px 10px',
+          
+  }
+});
+var subTitleEng = ui.Label({
+  value: 'Average (day time) Land Surface Temperature (LST) for different districts of West Bengal for the year 2023.',
+  style: {fontSize: '15px', 
+          margin: '8px 0 8px 0', 
+          padding: '0 10px',
+          
+  }
+});
+var dataSource = ui.Label({
+  value: 'Data Source: Daytime LST Product, MODIS Terra Satellite - NASA' ,
+  style: {fontSize: '13px', 
+          color: '0502ce' ,  //Plaette blue (5th color)
+          fontFamily: 'serif',
+          margin: '8px 0 8px 0', 
+          padding: '0 30px',
+          
+  }
+});
+var distPanel = ui.Panel(); 
+var chartPanel = ui.Panel();
+var bellowChartText = ui.Label({
+  value: 'You are seeing a time series chart of earth surface temparature, as observed by a high-altitude spaceborne satellite. The gaps in the data, particularly during the monsoon season (July to September), are due to a lack of cloud-free pixels that meet "Quality Assurance" standards.',
+  style: {fontSize: '14px', 
+          //color: '0502a3'
+          padding: '0 10px',
+          
+  }
+});
+var creditTitle = ui.Label({
+  value: 'Develpoed by Somdeep Kundu, 14feb24',
+  style: {fontSize: '13px', 
+          color: 'c21301',  //Plaette Red
+          fontFamily: 'serif',
+          padding: '0 10px',
+          
+  }
+});
+var dedication = ui.Label({
+  value: 'Article 51A(h) Indian Constitution - "It shall be the duty of every citizens of India to develop the scientific temper, humanism and the spirit of inquiry and reform;"',
+  style: {fontSize: '11.5px', 
+          color: 'black', 
+          fontFamily: 'serif',
+          textAlign:'right',
+          padding: '0 10px',
+          // whiteSpace: 'pre',
+          
+  }
+});
+mainPanel.add(title);  mainPanel.add(subTitleEng); mainPanel.add(dataSource); mainPanel.add(distPanel); mainPanel.add(chartPanel);    
+var splitPanel = ui.SplitPanel({
+  firstPanel: mapPanel,
+  secondPanel: mainPanel,
+});  
+
+ui.root.clear();
+ui.root.add(splitPanel);
+
+/////////////DATA
+
+var modis = ee.ImageCollection("MODIS/061/MOD11A1").filterDate("2023","2024").select('LST_Day_1km', 'QC_Day');
+var modcel = modis.map(function(img){
+  return img
+  .multiply(0.02)
+  .subtract(273.15)
+  .copyProperties(img, ['system:time_start']);
+});   
+
+var wbDist = ee.FeatureCollection("projects/ee-project-tapas/assets/wbDist");  
+var distNames = wbDist.aggregate_array('District');    
+print(distNames)
+
+// var country_names = ['Israel'];
+// var wbDist = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017");
+// var distNames = wbDist.filter(ee.Filter.inList('country_na',country_names));
+// // var distNames = wbDist.geometry();
+// print(wbDist)
+
+distNames.evaluate(function(names){
+  var distDropDown = ui.Select({
+    placeholder: 'Select a District/জেলা',
+    items: names,
+    onChange: display,
+    style: {color: '053061', margin: '0 auto', width: '88%'}
+  }); 
+  distPanel.add(distDropDown);
+});
+var display = function(distName) {
+  var selected = ee.Feature(
+    wbDist.filter(ee.Filter.eq('District', distName)).first());
+  var distGeometry = selected.geometry();
+  mapPanel.clear();
+  
+  mapPanel.addLayer(distGeometry, {color: 'grey', opacity: 0.5}, distName, 1);
+    //Quality Data
+    var image = ee.Image(modis.first());
+    var lstDay = image.select('LST_Day_1km');
+    var qcDay = image.select('QC_Day');
+    var bitwiseExtract = function(input, fromBit, toBit) {
+    var maskSize = ee.Number(1).add(toBit).subtract(fromBit)
+    var mask = ee.Number(1).leftShift(maskSize).subtract(1)
+    return input.rightShift(fromBit).bitwiseAnd(mask)}
+    var applyQaMask = function(image) {
+      var lstDay = image.select('LST_Day_1km');
+      var qcDay = image.select('QC_Day');
+      var qaMask = bitwiseExtract(qcDay, 0, 1).lte(1);
+      var dataQualityMask = bitwiseExtract(qcDay, 2, 3).eq(0);
+      var lstErrorMask = bitwiseExtract(qcDay, 6, 7).eq(0);
+      var mask = qaMask.and(dataQualityMask).and(lstErrorMask);
+      return lstDay.updateMask(mask);
+    };
+    var modcelMasked = modis.map(applyQaMask);
+    var modcelQA = modcelMasked.map(function(img){
+      return img
+      .multiply(0.02)
+      .subtract(273.15)
+      .copyProperties(img, ['system:time_start']);
+    });  
+      //Chart
+      var tsc = ui.Chart.image.series({
+      imageCollection : modcelQA.select(['LST_Day_1km'], ['LST']),
+      region : distGeometry,
+      reducer : ee.Reducer.mean(),
+      scale : 1000,   
+      xProperty : "system:time_start"})      
+      .setOptions({
+                interpolateNulls: true,  
+                pointSize: 1.3,
+                
+                title : "LST Temporal Analysis for " + distName + " District",
+                titleTextStyle: {bold: true, color: '04028b'  },
+                hAxis: {  
+                    format: 'MMM',
+                    title: '',
+                    titleTextStyle: {italic: true, color: '0502ce'  }, //no use
+                    gridlines: {color: 'ffffdd', count: 12}
+                    
+                  },
+                vAxis: {      
+                    title: 'Temperature (in °Celcius)',
+                    titleTextStyle: {italic: false, color: '04028b'  },
+                    gridlines: {color: 'ffffcc'},
+                    // format: 'short',
+                    baselineColor: 'ffffcc',
+                    
+                    
+                  },
+                series: {
+                    0:{
+                      lineWidth: 0.75, 
+                      color: 'd10901',  
+                      pointShape: 'triangle',
+                      pointSize: 3.5 , 
+                      
+                    },       
+                },
+                chartArea: {backgroundColor: 'EBEBEB'},
+                
+                });
+    chartPanel.clear(); chartPanel.add(tsc); chartPanel.add(bellowChartText);
+    
+    //UI - Map Visualization
+    var meanLST = modcel.select('LST_Day_1km').mean(); 
+    
+    var stats = meanLST.reduceRegion({
+      reducer: ee.Reducer.minMax(),
+      geometry: distGeometry,
+      scale:  10946,
+      maxPixels: 1e10
+    });      
+    var min = stats.get('LST_Day_1km_min'); var max = stats.get('LST_Day_1km_max');
+    
+    var LSTpaletteTemp = [
+      // '040274', '040281', 
+      '0502a3', '0502b8', '0502ce', '0502e6',
+      '0602ff', '235cb1', '307ef3', '269db1', '30c8e2', '32d3ef',
+      '3be285', '3ff38f', '86e26f', '3ae237', 'b5e22e', 'd6e21f',
+      'fff705', 'ffd611', 'ffb613', 'ff8b13', 'ff6e08', 'ff500d',
+      'ff0000', 'de0101', 'c21301',
+      // 'a71001', '911003'
+    ];    
+    stats.evaluate(function(statsDict) {
+      var lstVisParam = {
+          min: statsDict['LST_Day_1km_min'], 
+          max: statsDict['LST_Day_1km_max'], 
+          palette: LSTpaletteTemp
+        };
+      
+      mapPanel.addLayer(meanLST.clip(distGeometry), lstVisParam, 'Land Surface Temperature');
+      mapPanel.centerObject(distGeometry); 
+        //Index
+        var legend = ui.Panel({
+          style: {
+            position: 'bottom-right',
+            backgroundColor: 'rgba(255,255,255, 0.8)' ,
+            
+            
+          }
+        });     
+        var legendTitle1 = ui.Label({
+          value: 'Temperature',
+          style: {
+            color: '#2d2d2d',
+            fontWeight: 'bold',
+            fontSize: '18px',
+            margin: '5px auto',
+            backgroundColor: 'rgba(255,255,255, 0)'
+          },
+          
+        });  
+        var legendTitle2 = ui.Label({
+          value: "(Anual Average)",
+          style: {
+            color: 'gray',
+            fontSize: '13px',
+            margin: '0 auto',
+            backgroundColor: 'rgba(255,255,255, 0)'
+            
+            }
+        }); 
+        legend.add(legendTitle1); legend.add(legendTitle2);    
+        
+        var lon = ee.Image.pixelLonLat().select('latitude');
+        var gradient = lon.multiply((lstVisParam.max-lstVisParam.min)/100.0).add(lstVisParam.min);
+        var legendImage = gradient.visualize(lstVisParam);
+        var topTemp = ui.Panel({
+            widgets: [
+             ui.Label({
+                 value: ['Max: ' +lstVisParam.max.toFixed(1) + '°C'],
+               
+                 style: {
+                  color: '880002',
+                  textAlign : "center",
+                  padding: '0 8px',  
+                  backgroundColor: 'rgba(255,255,255, 0)', // I can't solve this overlapping problem
+                 }  
+                 })
+                ],
+          });
+        var thumbnail = ui.Thumbnail({
+          image: legendImage, 
+          params: {bbox:'0,0,10,100', dimensions:'30x200'}, 
+          //padding: '0px', textAlign : 'center', width : '100%', maxWidth : '84px'  
+          style: {textAlign : 'center', 
+                  maxWidth : '150px', 
+                  margin: '0 auto', 
+                  width: '30%'
+            
+          },
+          
+          
+        });
+        var bottTemp = ui.Panel({
+            widgets: [
+              ui.Label({
+                 value: ['Min: ' +lstVisParam.min.toFixed(1) + '°C'],
+                 style: {
+                  color: '0502b4',
+                  textAlign : "center",
+                  padding: '0 8px',  
+                  backgroundColor: 'rgba(255,255,255, 0)',
+                  
+                 }  
+              })
+          ]
+        });
+        legend.add(topTemp); legend.add(thumbnail); legend.add(bottTemp);  
+      mapPanel.add(legend);
+      mapPanel.setOptions('HYBRID')
+});  
+          //Global Animation
+          var params = {
+                  bands: ['LST_Day_1km'],
+                  min: 15.0,
+                  max: 35.0,
+                  palette: LSTpaletteTemp,
+                 region: ee.Geometry.BBox(-180, -58, 180, 63),
+                  dimensions: 450,
+                  crs: 'EPSG:32662',
+                  framesPerSecond: 10
+                };
+          var animation = ui.Thumbnail({
+            image: modcel,
+            params: params,
+            style: {position: 'top-left',  margin: '0 auto',}
+          });
+          chartPanel.add(animation); 
+          chartPanel.add(creditTitle); chartPanel.add(dedication);
+              
+};
+
+
+
+   
+mapPanel.setCenter(88.406, 24.383, 7);    
+
+var wbDistDrawn = wbDist.draw({
+        color: 'd10901',
+        strokeWidth: 2
+    });
+mapPanel.addLayer(wbDistDrawn, {}, "West Bengal")
+
+
+
+//////////////////////////////////////////////////////////////////
+//feel free to mdify as per you use
+//Somdeep Kundu
+//Adra, West Bengal 19-02-2024  
+//Article51a(h) Indian Constitution 🇮🇳🐅🪷
+//"It shall be the duty of every citizens of India- 
+//to develop the scientific temper, humanism and the spirit of inquiry and reform;"
