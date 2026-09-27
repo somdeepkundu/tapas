@@ -1,328 +1,1494 @@
-var mapPanel = ui.Map();
-var mainPanel = ui.Panel({
-  style: {
-    width: '500px',
-    border: '3px solid #888',
-    
-  }
-});   
-var title = ui.Label({
-  value: 'Tapas - The LST Explorer' ,
-  style: {fontSize: '35px', 
-          fontFamily: 'serif', 
-          color: 'd10901', //Red
-          margin: '0 auto',
-          padding: '10px 10px',
-          
-  }
-});
-var subTitleEng = ui.Label({
-  value: 'Average (day time) Land Surface Temperature (LST) for different districts of West Bengal for the year 2023.',
-  style: {fontSize: '15px', 
-          margin: '8px 0 8px 0', 
-          padding: '0 10px',
-          
-  }
-});
-var dataSource = ui.Label({
-  value: 'Data Source: Daytime LST Product, MODIS Terra Satellite - NASA' ,
-  style: {fontSize: '13px', 
-          color: '0502ce' ,  //Plaette blue (5th color)
-          fontFamily: 'serif',
-          margin: '8px 0 8px 0', 
-          padding: '0 30px',
-          
-  }
-});
-var distPanel = ui.Panel(); 
-var chartPanel = ui.Panel();
-var bellowChartText = ui.Label({
-  value: 'You are seeing a time series chart of earth surface temparature, as observed by a high-altitude spaceborne satellite. The gaps in the data, particularly during the monsoon season (July to September), are due to a lack of cloud-free pixels that meet "Quality Assurance" standards.',
-  style: {fontSize: '14px', 
-          //color: '0502a3'
-          padding: '0 10px',
-          
-  }
-});
-var creditTitle = ui.Label({
-  value: 'Develpoed by Somdeep Kundu, 14feb24',
-  style: {fontSize: '13px', 
-          color: 'c21301',  //Plaette Red
-          fontFamily: 'serif',
-          padding: '0 10px',
-          
-  }
-});
-var dedication = ui.Label({
-  value: 'Article 51A(h) Indian Constitution - "It shall be the duty of every citizens of India to develop the scientific temper, humanism and the spirit of inquiry and reform;"',
-  style: {fontSize: '11.5px', 
-          color: 'black', 
-          fontFamily: 'serif',
-          textAlign:'right',
-          padding: '0 10px',
-          // whiteSpace: 'pre',
-          
-  }
-});
-mainPanel.add(title);  mainPanel.add(subTitleEng); mainPanel.add(dataSource); mainPanel.add(distPanel); mainPanel.add(chartPanel);    
-var splitPanel = ui.SplitPanel({
-  firstPanel: mapPanel,
-  secondPanel: mainPanel,
-});  
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>CropView v3 — Geo-Camera Field Capture</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#080d1a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root {
+      /* v3.4 LTR — palette and type match the Data Explorer (cropview-viewer-v2).
+         Variable names are kept so no rule had to change: --green is now the
+         cyan accent. Live cone / compass / GPS-quality colours are set in the
+         script and are unchanged (green OK · amber stale · red lost). */
+      --bg:#080d1a; --surface:#0f1626; --surface2:#182035; --border:#253047;
+      --green:#22d3ee; --green2:#0ea5e9; --amber:#fbbf24; --red:#f87171;
+      --text:#e8f0fe; --muted:#94a3b8;
+      --mono:'Comfortaa',system-ui,sans-serif; --sans:'Comfortaa',system-ui,sans-serif; --radius:10px;
+    }
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-variant-numeric:tabular-nums;overflow:hidden}
 
-ui.root.clear();
-ui.root.add(splitPanel);
+    /* HEADER */
+    #header{position:fixed;top:0;left:0;right:0;z-index:1000;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(8,13,26,.93);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+    .logo{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)}
+    .logo span{color:var(--muted);font-weight:400}
+    .logo .proj{color:var(--amber);font-size:10px;display:block;margin-top:1px}
+    #hdr-right{display:flex;align-items:center;gap:8px}
+    #cap-badge{font-family:var(--mono);font-size:10px;color:var(--muted)}
+    #about-btn{font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 10px;cursor:pointer;transition:all .2s}
+    #about-btn:active{color:var(--green);border-color:var(--green2)}
+    #status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);transition:all .4s}
+    #status-dot.active{background:var(--green);box-shadow:0 0 0 4px rgba(34,211,238,.2);animation:pulse 2s infinite}
+    #status-dot.warn{background:var(--amber);box-shadow:0 0 0 4px rgba(251,191,36,.2)}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(34,211,238,.2)}50%{box-shadow:0 0 0 8px rgba(34,211,238,.05)}}
 
-/////////////DATA
+    /* TABS */
+    #tabs{position:fixed;top:51px;left:0;right:0;z-index:999;display:flex;background:var(--surface);border-bottom:1px solid var(--border)}
+    .tab{flex:1;padding:9px 0;text-align:center;font-family:var(--mono);font-size:11px;letter-spacing:.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+    .tab.active{color:var(--green);border-bottom-color:var(--green)}
 
-var modis = ee.ImageCollection("MODIS/061/MOD11A1").filterDate("2023","2024").select('LST_Day_1km', 'QC_Day');
-var modcel = modis.map(function(img){
-  return img
-  .multiply(0.02)
-  .subtract(273.15)
-  .copyProperties(img, ['system:time_start']);
-});   
+    /* APP */
+    #app{position:fixed;top:91px;left:0;right:0;bottom:0;overflow:hidden}
+    .panel{display:none;height:100%;flex-direction:column}
+    .panel.active{display:flex}
 
-var wbDist = ee.FeatureCollection("projects/ee-project-tapas/assets/wbDist");  
-var distNames = wbDist.aggregate_array('District');    
-print(distNames)
+    /* CAMERA */
+    #vcont{flex:1;position:relative;overflow:hidden;background:#000}
+    #video{width:100%;height:100%;object-fit:cover}
+    #fov-ol{position:absolute;inset:0;pointer-events:none}
+    .ch{position:absolute;background:rgba(34,211,238,.4)}
+    .ch-h{top:50%;left:25%;width:50%;height:1px;transform:translateY(-50%)}
+    .ch-v{left:50%;top:25%;height:50%;width:1px;transform:translateX(-50%)}
+    .ch-c{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:14px;height:14px;border:2px solid var(--green);border-radius:50%}
+    .corner{position:absolute;width:20px;height:20px;border-color:var(--green);border-style:solid;opacity:.7}
+    .corner.tl{top:12%;left:8%;border-width:2px 0 0 2px}
+    .corner.tr{top:12%;right:8%;border-width:2px 2px 0 0}
+    .corner.bl{bottom:12%;left:8%;border-width:0 0 2px 2px}
+    .corner.br{bottom:12%;right:8%;border-width:0 2px 2px 0}
 
-// var country_names = ['Israel'];
-// var wbDist = ee.FeatureCollection("USDOS/LSIB_SIMPLE/2017");
-// var distNames = wbDist.filter(ee.Filter.inList('country_na',country_names));
-// // var distNames = wbDist.geometry();
-// print(wbDist)
+    /* TILT GUIDE */
+    #tilt-guide{position:absolute;right:14px;top:50%;transform:translateY(-50%);width:30px;display:flex;flex-direction:column;align-items:center;gap:4px}
+    #tilt-bar{position:relative;width:28px;height:130px;background:rgba(8,13,26,.7);border-radius:14px;border:1px solid rgba(37,48,71,.8);overflow:hidden}
+    #tilt-zone{position:absolute;left:0;right:0;background:rgba(34,211,238,.15);border-top:1px solid rgba(34,211,238,.5);border-bottom:1px solid rgba(34,211,238,.5)}
+    #tilt-pin{position:absolute;left:3px;right:3px;height:3px;background:var(--green);border-radius:2px;box-shadow:0 0 6px rgba(34,211,238,.7);transition:top .2s}
+    #tilt-pin.warn{background:var(--amber);box-shadow:0 0 6px rgba(251,191,36,.7)}
+    #tilt-deg{font-family:var(--mono);font-size:9px;color:var(--green);background:rgba(8,13,26,.75);padding:2px 4px;border-radius:4px}
+    #tilt-deg.warn{color:var(--amber)}
+    #tilt-lbl{font-family:var(--mono);font-size:8px;color:var(--muted);text-align:center;line-height:1.4}
 
-distNames.evaluate(function(names){
-  var distDropDown = ui.Select({
-    placeholder: 'Select a District/জেলা',
-    items: names,
-    onChange: display,
-    style: {color: '053061', margin: '0 auto', width: '88%'}
-  }); 
-  distPanel.add(distDropDown);
-});
-var display = function(distName) {
-  var selected = ee.Feature(
-    wbDist.filter(ee.Filter.eq('District', distName)).first());
-  var distGeometry = selected.geometry();
-  mapPanel.clear();
-  
-  mapPanel.addLayer(distGeometry, {color: 'grey', opacity: 0.5}, distName, 1);
-    //Quality Data
-    var image = ee.Image(modis.first());
-    var lstDay = image.select('LST_Day_1km');
-    var qcDay = image.select('QC_Day');
-    var bitwiseExtract = function(input, fromBit, toBit) {
-    var maskSize = ee.Number(1).add(toBit).subtract(fromBit)
-    var mask = ee.Number(1).leftShift(maskSize).subtract(1)
-    return input.rightShift(fromBit).bitwiseAnd(mask)}
-    var applyQaMask = function(image) {
-      var lstDay = image.select('LST_Day_1km');
-      var qcDay = image.select('QC_Day');
-      var qaMask = bitwiseExtract(qcDay, 0, 1).lte(1);
-      var dataQualityMask = bitwiseExtract(qcDay, 2, 3).eq(0);
-      var lstErrorMask = bitwiseExtract(qcDay, 6, 7).eq(0);
-      var mask = qaMask.and(dataQualityMask).and(lstErrorMask);
-      return lstDay.updateMask(mask);
-    };
-    var modcelMasked = modis.map(applyQaMask);
-    var modcelQA = modcelMasked.map(function(img){
-      return img
-      .multiply(0.02)
-      .subtract(273.15)
-      .copyProperties(img, ['system:time_start']);
-    });  
-      //Chart
-      var tsc = ui.Chart.image.series({
-      imageCollection : modcelQA.select(['LST_Day_1km'], ['LST']),
-      region : distGeometry,
-      reducer : ee.Reducer.mean(),
-      scale : 1000,   
-      xProperty : "system:time_start"})      
-      .setOptions({
-                interpolateNulls: true,  
-                pointSize: 1.3,
-                
-                title : "LST Temporal Analysis for " + distName + " District",
-                titleTextStyle: {bold: true, color: '04028b'  },
-                hAxis: {  
-                    format: 'MMM',
-                    title: '',
-                    titleTextStyle: {italic: true, color: '0502ce'  }, //no use
-                    gridlines: {color: 'ffffdd', count: 12}
-                    
-                  },
-                vAxis: {      
-                    title: 'Temperature (in °Celcius)',
-                    titleTextStyle: {italic: false, color: '04028b'  },
-                    gridlines: {color: 'ffffcc'},
-                    // format: 'short',
-                    baselineColor: 'ffffcc',
-                    
-                    
-                  },
-                series: {
-                    0:{
-                      lineWidth: 0.75, 
-                      color: 'd10901',  
-                      pointShape: 'triangle',
-                      pointSize: 3.5 , 
-                      
-                    },       
-                },
-                chartArea: {backgroundColor: 'EBEBEB'},
-                
-                });
-    chartPanel.clear(); chartPanel.add(tsc); chartPanel.add(bellowChartText);
-    
-    //UI - Map Visualization
-    var meanLST = modcel.select('LST_Day_1km').mean(); 
-    
-    var stats = meanLST.reduceRegion({
-      reducer: ee.Reducer.minMax(),
-      geometry: distGeometry,
-      scale:  10946,
-      maxPixels: 1e10
-    });      
-    var min = stats.get('LST_Day_1km_min'); var max = stats.get('LST_Day_1km_max');
-    
-    var LSTpaletteTemp = [
-      // '040274', '040281', 
-      '0502a3', '0502b8', '0502ce', '0502e6',
-      '0602ff', '235cb1', '307ef3', '269db1', '30c8e2', '32d3ef',
-      '3be285', '3ff38f', '86e26f', '3ae237', 'b5e22e', 'd6e21f',
-      'fff705', 'ffd611', 'ffb613', 'ff8b13', 'ff6e08', 'ff500d',
-      'ff0000', 'de0101', 'c21301',
-      // 'a71001', '911003'
-    ];    
-    stats.evaluate(function(statsDict) {
-      var lstVisParam = {
-          min: statsDict['LST_Day_1km_min'], 
-          max: statsDict['LST_Day_1km_max'], 
-          palette: LSTpaletteTemp
-        };
-      
-      mapPanel.addLayer(meanLST.clip(distGeometry), lstVisParam, 'Land Surface Temperature');
-      mapPanel.centerObject(distGeometry); 
-        //Index
-        var legend = ui.Panel({
-          style: {
-            position: 'bottom-right',
-            backgroundColor: 'rgba(255,255,255, 0.8)' ,
-            
-            
-          }
-        });     
-        var legendTitle1 = ui.Label({
-          value: 'Temperature',
-          style: {
-            color: '#2d2d2d',
-            fontWeight: 'bold',
-            fontSize: '18px',
-            margin: '5px auto',
-            backgroundColor: 'rgba(255,255,255, 0)'
-          },
-          
-        });  
-        var legendTitle2 = ui.Label({
-          value: "(Anual Average)",
-          style: {
-            color: 'gray',
-            fontSize: '13px',
-            margin: '0 auto',
-            backgroundColor: 'rgba(255,255,255, 0)'
-            
-            }
-        }); 
-        legend.add(legendTitle1); legend.add(legendTitle2);    
-        
-        var lon = ee.Image.pixelLonLat().select('latitude');
-        var gradient = lon.multiply((lstVisParam.max-lstVisParam.min)/100.0).add(lstVisParam.min);
-        var legendImage = gradient.visualize(lstVisParam);
-        var topTemp = ui.Panel({
-            widgets: [
-             ui.Label({
-                 value: ['Max: ' +lstVisParam.max.toFixed(1) + '°C'],
-               
-                 style: {
-                  color: '880002',
-                  textAlign : "center",
-                  padding: '0 8px',  
-                  backgroundColor: 'rgba(255,255,255, 0)', // I can't solve this overlapping problem
-                 }  
-                 })
-                ],
-          });
-        var thumbnail = ui.Thumbnail({
-          image: legendImage, 
-          params: {bbox:'0,0,10,100', dimensions:'30x200'}, 
-          //padding: '0px', textAlign : 'center', width : '100%', maxWidth : '84px'  
-          style: {textAlign : 'center', 
-                  maxWidth : '150px', 
-                  margin: '0 auto', 
-                  width: '30%'
-            
-          },
-          
-          
-        });
-        var bottTemp = ui.Panel({
-            widgets: [
-              ui.Label({
-                 value: ['Min: ' +lstVisParam.min.toFixed(1) + '°C'],
-                 style: {
-                  color: '0502b4',
-                  textAlign : "center",
-                  padding: '0 8px',  
-                  backgroundColor: 'rgba(255,255,255, 0)',
-                  
-                 }  
-              })
-          ]
-        });
-        legend.add(topTemp); legend.add(thumbnail); legend.add(bottTemp);  
-      mapPanel.add(legend);
-      mapPanel.setOptions('HYBRID')
-});  
-          //Global Animation
-          var params = {
-                  bands: ['LST_Day_1km'],
-                  min: 15.0,
-                  max: 35.0,
-                  palette: LSTpaletteTemp,
-                 region: ee.Geometry.BBox(-180, -58, 180, 63),
-                  dimensions: 450,
-                  crs: 'EPSG:32662',
-                  framesPerSecond: 10
-                };
-          var animation = ui.Thumbnail({
-            image: modcel,
-            params: params,
-            style: {position: 'top-left',  margin: '0 auto',}
-          });
-          chartPanel.add(animation); 
-          chartPanel.add(creditTitle); chartPanel.add(dedication);
-              
+    /* COMPASS */
+    #compass{position:absolute;top:14px;right:14px;width:64px;height:64px;cursor:pointer}
+    #compass svg{width:100%;height:100%}
+    #compass-ring{transition:stroke .5s}
+    #cneedle{transform-origin:30px 30px;transition:transform .3s}
+    #compass-tap{position:absolute;bottom:-14px;left:0;right:0;text-align:center;font-family:var(--mono);font-size:7px;color:var(--muted);opacity:0;transition:opacity .2s}
+    #compass:active #compass-tap{opacity:1}
+
+    /* HUD */
+    #hud{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:4px}
+    .hbadge{background:rgba(8,13,26,.75);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-family:var(--mono);font-size:10px;color:var(--green)}
+    .hbadge.warn{color:var(--amber);border-color:var(--amber)}
+    .hbadge.bad{color:var(--red);border-color:var(--red)}
+    .hbadge.dim{color:var(--muted)}
+
+    /* CAM CONTROLS */
+    #cc{padding:10px 14px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:8px}
+    .btn{flex:1;padding:11px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border:none;border-radius:var(--radius);cursor:pointer;transition:all .15s}
+    .bp{background:var(--green);color:var(--bg)}
+    .bp:active{transform:scale(.97);background:var(--green2)}
+    .bs{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+    .bs:active{transform:scale(.97)}
+    .bd{background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3)}
+
+    /* MAP */
+    #map{flex:1}
+    .leaflet-tile{filter:brightness(.7) saturate(.8) hue-rotate(60deg)}
+    .leaflet-container{background:var(--bg)!important}
+    #mc{padding:10px 14px;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:8px}
+
+    /* DATA */
+    #data-panel{overflow-y:auto;padding:14px;gap:10px}
+    .dc{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px}
+    .dc h3{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+    .dr{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(37,48,71,.5);font-size:13px}
+    .dr:last-child{border-bottom:none}
+    .dl{color:var(--muted);font-size:12px}
+    .dv{font-family:var(--mono);font-size:12px;color:var(--green)}
+    .dv.na{color:var(--muted)}
+    .kc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
+    .kcs{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;cursor:pointer;transition:all .2s}
+    .kcs.on{border-color:var(--green);background:rgba(34,211,238,.08)}
+    .kcs .sn{font-family:var(--mono);font-size:18px;color:var(--green);font-weight:700}
+    .kcs .sl{font-size:10px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+    .kcs .sv{font-family:var(--mono);font-size:11px;color:var(--amber);margin-top:4px}
+    #cap-list{display:flex;flex-direction:column;gap:8px}
+    .ci{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:11px 13px;display:flex;gap:11px}
+    .cthumb{width:50px;height:50px;border-radius:8px;object-fit:cover;background:var(--surface2);border:1px solid var(--border);flex-shrink:0}
+    .cmeta{flex:1;min-width:0}
+    .cid{font-family:var(--mono);font-size:11px;color:var(--green)}
+    .cdet{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.6}
+    .cact{display:flex;gap:5px;margin-top:7px}
+    .chip{font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:20px;border:1px solid var(--border);color:var(--muted);cursor:pointer}
+    .chip.g{border-color:var(--green2);color:var(--green)}
+    .es{text-align:center;padding:36px 20px;color:var(--muted);font-size:13px;line-height:1.7}
+
+    /* PERMISSION SCREEN */
+    #perm{display:none;position:fixed;inset:0;z-index:3000;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;gap:14px;overflow-y:auto}
+    #perm.on{display:flex}
+    #perm h2{font-family:var(--mono);font-size:18px;color:var(--green)}
+    #perm p{font-size:13px;color:var(--muted);line-height:1.7;max-width:300px}
+
+    /* PROJECT SCREEN */
+    #proj-screen{display:none;position:fixed;inset:0;z-index:2900;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;gap:14px}
+    #proj-screen.on{display:flex}
+    #proj-screen h2{font-family:var(--mono);font-size:16px;color:var(--green)}
+    #proj-screen p{font-size:12px;color:var(--muted);line-height:1.7;max-width:300px}
+    .flbl{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;align-self:flex-start;margin-bottom:-8px}
+    .tinput{width:100%;max-width:320px;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:border-color .2s}
+    .tinput:focus{border-color:var(--green2)}
+    .tinput::placeholder{color:var(--muted)}
+    .pform{display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px;align-items:flex-start}
+    .fhint{font-size:11px;color:var(--muted);line-height:1.6}
+
+    /* ABOUT MODAL */
+    #about-ov{display:none;position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:20px}
+    #about-ov.on{display:flex}
+    #about-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:380px;max-height:84vh;overflow-y:auto;padding:24px 22px;position:relative}
+    #about-x{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+    #about-x:hover{color:var(--text);border-color:var(--green2)}
+    .alogo{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--green);margin-bottom:3px}
+    .alogo span{color:var(--muted);font-weight:400}
+    .aver{font-family:var(--mono);font-size:10px;color:var(--amber);margin-bottom:18px}
+    .asec{margin-bottom:16px}
+    .asec h4{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+    .asec p,.asec a{font-size:12px;color:var(--text);line-height:1.8}
+    .asec a{color:var(--green);text-decoration:none}
+    .atag{display:inline-block;font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:20px;border:1px solid var(--border);color:var(--muted);margin:3px 3px 0 0}
+    .atag.h{border-color:var(--green2);color:var(--green)}
+    .discbox{background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.2);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--amber);line-height:1.6;margin-top:8px}
+
+    /* GPS STATUS MODAL */
+    #gps-ov{display:none;position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:20px}
+    #gps-ov.on{display:flex}
+    #gps-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:380px;max-height:84vh;overflow-y:auto;padding:22px 20px;position:relative}
+    #gps-x{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+    #gps-x:hover{color:var(--text);border-color:var(--green2)}
+    #acc-ring-wrap{display:flex;flex-direction:column;align-items:center;padding:14px 0 6px}
+    #acc-ring-svg{width:130px;height:130px}
+    .ring-track{fill:none;stroke:var(--surface2);stroke-width:10}
+    .ring-fill{fill:none;stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset .6s,stroke .4s}
+    #fix-badge{margin-top:10px;font-family:var(--mono);font-size:12px;font-weight:700;padding:5px 16px;border-radius:20px;letter-spacing:.5px;border:2px solid var(--muted);color:var(--muted)}
+    #fix-badge.good{border-color:var(--green);color:var(--green);background:rgba(34,211,238,.08)}
+    #fix-badge.ok{border-color:var(--amber);color:var(--amber);background:rgba(251,191,36,.08)}
+    #fix-badge.poor{border-color:var(--red);color:var(--red);background:rgba(248,113,113,.08)}
+    .sat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+    .sat-bar{display:flex;flex-direction:column;align-items:center;gap:3px}
+    .sat-bar-inner{width:100%;height:36px;background:var(--surface2);border-radius:4px;position:relative;overflow:hidden;border:1px solid var(--border)}
+    .sat-bar-fill{position:absolute;bottom:0;left:0;right:0;border-radius:3px;transition:height .5s}
+    .sat-bar-lbl{font-family:var(--mono);font-size:8px;color:var(--muted);text-align:center}
+    .acc-history{display:flex;gap:4px;align-items:flex-end;height:36px;margin-top:4px}
+    .acc-bar{flex:1;border-radius:2px;background:var(--green2);transition:height .3s,background .3s}
+    .gsec{margin-bottom:14px}
+    .gsec h4{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+    .grow{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(37,48,71,.4);font-size:12px}
+    .grow:last-child{border-bottom:none}
+    .gl{color:var(--muted);font-size:11px}
+    .gv{font-family:var(--mono);font-size:11px;color:var(--green)}
+    .gv.warn{color:var(--amber)}
+    .gv.na{color:var(--muted)}
+    .gnote{font-size:11px;color:var(--muted);line-height:1.65;padding:8px 10px;background:var(--surface2);border-radius:8px;border-left:3px solid var(--border);margin-top:6px}
+
+    /* TOAST */
+    #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--surface2);border:1px solid var(--border);border-radius:24px;padding:9px 18px;font-family:var(--mono);font-size:11px;color:var(--text);z-index:9999;transition:transform .3s;white-space:nowrap}
+    #toast.show{transform:translateX(-50%) translateY(0)}
+    #toast.ok{border-color:var(--green2);color:var(--green)}
+    #toast.err{border-color:var(--red);color:var(--red)}
+
+    @keyframes scan{0%{top:0;opacity:1}100%{top:100%;opacity:0}}
+    .scanl{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--green),transparent);animation:scan .6s ease-out forwards;pointer-events:none;z-index:10}
+    ::-webkit-scrollbar{width:4px}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+  </style>
+</head>
+<body>
+
+<!-- PERMISSION SCREEN -->
+<div id="perm" class="on">
+  <div style="font-size:48px">🌿</div>
+  <h2>CropView</h2>
+  <p>Geo-tagged field capture with camera direction & FOV mapping for crop growth stage analysis.</p>
+  <p style="color:var(--amber);font-size:12px">Requires: Camera · GPS · Compass</p>
+  <button class="btn bp" style="max-width:240px;margin-top:8px" onclick="initPermissions()">Grant Permissions & Continue</button>
+
+  <div style="max-width:300px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+    <p style="font-size:11.5px;line-height:1.7">Walk the field and capture a shot per crop — each one is geotagged with position, heading and ground footprint, and tagged to a growth stage. When you're done, export the session as a ZIP from the Data tab.</p>
+    <p style="font-size:11.5px;line-height:1.7;margin-top:8px">Already have ZIPs? Open them in the Data Explorer — drop in as many as you like to map, browse and annotate.</p>
+  </div>
+
+  <a href="https://somdeepkundu.github.io/cropview-v3/cropview-viewer-v2.html" target="_blank" rel="noopener" style="display:inline-block;margin-top:2px;font-family:var(--mono);font-size:11px;color:var(--green);text-decoration:none;border:1px solid var(--green2);border-radius:20px;padding:8px 18px;background:var(--surface2)">🗺️ Open Data Explorer ↗</a>
+</div>
+
+<!-- PROJECT SCREEN -->
+<div id="proj-screen">
+  <div style="font-size:44px">📋</div>
+  <h2>New Field Session</h2>
+  <p>Name this survey session. All captures, images and GeoJSON will be saved under this project.</p>
+  <div class="pform">
+    <span class="flbl">Project / Session Name</span>
+    <input id="pname" class="tinput" type="text" placeholder="e.g. Wheat_Nashik_May2026" maxlength="60" autocomplete="off" spellcheck="false" />
+    <span class="flbl">Surveyor / Notes (optional)</span>
+    <input id="pnotes" class="tinput" type="text" placeholder="e.g. Somdeep · Pre-harvest check" maxlength="80" autocomplete="off" />
+    <span class="flbl">Camera Height Above Ground (m)</span>
+    <input id="pcamh" class="tinput" type="number" step="0.05" min="0.2" max="30" value="1.5" inputmode="decimal" />
+    <div class="fhint">📏 Chest/eye height when standing ≈ <span style="color:var(--green)">1.4–1.6 m</span>. This scales the entire ground footprint — set it accurately.</div>
+    <div class="fhint">📁 Images will be named:<br/><span style="color:var(--green);font-family:var(--mono);font-size:10px">ProjectName_ID_YYYYMMDDHHMMSS_lat_lon.jpg</span></div>
+    <button class="btn bp" style="width:100%;margin-top:4px" onclick="startProject()">Start Session →</button>
+  </div>
+</div>
+
+<!-- GPS STATUS MODAL -->
+<div id="gps-ov" onclick="closeGPS(event)">
+  <div id="gps-box">
+    <div id="gps-x" onclick="closeGPSDirect()">✕</div>
+    <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--green);margin-bottom:2px">📡 GPS STATUS</div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:14px">Live · updates every 2s</div>
+
+    <!-- Accuracy ring -->
+    <div id="acc-ring-wrap">
+      <svg id="acc-ring-svg" viewBox="0 0 130 130">
+        <circle class="ring-track" cx="65" cy="65" r="52"/>
+        <circle id="ring-fill" class="ring-fill" cx="65" cy="65" r="52"
+          stroke-dasharray="327" stroke-dashoffset="327"
+          stroke="#22d3ee" transform="rotate(-90 65 65)"/>
+        <text id="ring-acc-val" x="65" y="60" text-anchor="middle"
+          font-family="Comfortaa,sans-serif" font-size="22" font-weight="700" fill="#e8f0fe">—</text>
+        <text x="65" y="78" text-anchor="middle"
+          font-family="Comfortaa,sans-serif" font-size="11" fill="#94a3b8">metres</text>
+        <text x="65" y="94" text-anchor="middle"
+          font-family="Comfortaa,sans-serif" font-size="9" fill="#94a3b8">accuracy radius</text>
+      </svg>
+      <div id="fix-badge">NO FIX</div>
+    </div>
+
+    <!-- Simulated constellation bars -->
+    <div class="gsec" style="margin-top:12px">
+      <h4>🛰 Estimated Constellation Activity</h4>
+      <div class="sat-grid">
+        <div class="sat-bar">
+          <div class="sat-bar-inner"><div class="sat-bar-fill" id="bar-gps" style="background:#22d3ee;height:0%"></div></div>
+          <div class="sat-bar-lbl">GPS</div>
+        </div>
+        <div class="sat-bar">
+          <div class="sat-bar-inner"><div class="sat-bar-fill" id="bar-glo" style="background:#fbbf24;height:0%"></div></div>
+          <div class="sat-bar-lbl">GLONASS</div>
+        </div>
+        <div class="sat-bar">
+          <div class="sat-bar-inner"><div class="sat-bar-fill" id="bar-gal" style="background:#4ac8ff;height:0%"></div></div>
+          <div class="sat-bar-lbl">GALILEO</div>
+        </div>
+        <div class="sat-bar">
+          <div class="sat-bar-inner"><div class="sat-bar-fill" id="bar-bei" style="background:#ff8c42;height:0%"></div></div>
+          <div class="sat-bar-lbl">BeiDou</div>
+        </div>
+      </div>
+      <div class="gnote">⚠ Browsers cannot read actual satellite counts. These bars are estimated from your GPS accuracy — better accuracy = more satellites likely contributing. For real GNSS data, a native app is needed.</div>
+    </div>
+
+    <!-- Fix metrics -->
+    <div class="gsec">
+      <h4>📊 Fix Metrics</h4>
+      <div class="grow"><span class="gl">Accuracy (H)</span><span class="gv" id="g-acc">—</span></div>
+      <div class="grow"><span class="gl">Altitude Accuracy (V)</span><span class="gv" id="g-altacc">—</span></div>
+      <div class="grow"><span class="gl">Est. HDOP</span><span class="gv" id="g-hdop">—</span></div>
+      <div class="grow"><span class="gl">Fix Quality</span><span class="gv" id="g-quality">—</span></div>
+      <div class="grow"><span class="gl">Est. Satellites</span><span class="gv" id="g-sats">—</span></div>
+      <div class="grow"><span class="gl">Altitude</span><span class="gv" id="g-alt">—</span></div>
+      <div class="grow"><span class="gl">Last Updated</span><span class="gv" id="g-time">—</span></div>
+    </div>
+
+    <!-- Accuracy history -->
+    <div class="gsec">
+      <h4>📈 Accuracy History (last 10)</h4>
+      <div class="acc-history" id="acc-history"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px">
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted)">older</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted)">now</span>
+      </div>
+    </div>
+
+    <!-- Device GNSS note -->
+    <div class="gsec">
+      <h4>📱 Your Device</h4>
+      <div class="grow"><span class="gl">Platform</span><span class="gv" id="g-platform">—</span></div>
+      <div class="grow"><span class="gl">Likely GNSS</span><span class="gv" id="g-gnss">—</span></div>
+      <div class="grow"><span class="gl">Multi-band</span><span class="gv" id="g-multiband">—</span></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ABOUT MODAL -->
+<div id="about-ov" onclick="closeAbout(event)">
+  <div id="about-box">
+    <div id="about-x" onclick="closeAboutDirect()">✕</div>
+    <div class="alogo">CROP<span>VIEW</span></div>
+    <div class="aver">Version 3.4 LTR · Layer 1 of 3 · 2026 · Long-term release</div>
+
+    <div class="asec">
+      <h4>👨‍🔬 Developed By</h4>
+      <p><strong style="color:var(--green)">Somdeep Kundu</strong><br/>
+      PhD Research Scholar<br/>
+      Rural Data Research and Analysis Lab <span style="color:var(--amber)">(RuDRA)</span><br/>
+      Centre for Technology Alternatives for Rural Areas <span style="color:var(--amber)">(C-TARA)</span><br/>
+      <strong>IIT Bombay</strong></p>
+    </div>
+
+    <div class="asec">
+      <h4>🏛 Project Affiliation</h4>
+      <p>Developed for the <strong style="color:var(--amber)">RGSTC Project</strong><br/>
+      Rajiv Gandhi Science &amp; Technology Commission<br/>
+      Maharashtra Government</p>
+    </div>
+
+    <div class="asec">
+      <h4>🔬 Purpose</h4>
+      <p>Mobile geo-tagged field capture app correlating phone camera POV with Sentinel-2 satellite imagery for FAO-56 crop growth stage validation using Kc coefficients.</p>
+      <div style="margin-top:8px">
+        <span class="atag h">Open Source</span>
+        <span class="atag h">GitHub Pages</span>
+        <span class="atag">FAO-56 Kc</span>
+        <span class="atag">Sentinel-2</span>
+        <span class="atag">GeoJSON</span>
+        <span class="atag">IIT Bombay</span>
+      </div>
+    </div>
+
+    <div class="asec">
+      <h4>🧭 What's new in v3</h4>
+      <p>The heading pipeline no longer trusts a single browser event. It watches its own sensor stream, throws out invalid readings instead of quietly defaulting to North, notices when a phone-specific bug freezes the compass, and silently resubscribes and recovers. If it truly can't get a fix, it says so instead of showing you a confident, wrong cone. Tap the compass any time to force a recalibration.</p>
+      <p><b>Since v3.2:</b> the heading is now always where the <i>camera</i> points, never the direction you are travelling — so side-looking shots from a vehicle are recorded correctly, and the map cone follows the phone live, even when held upright.</p>
+    </div>
+
+    <div class="asec">
+      <h4>🗺️ View Your Data</h4>
+      <p style="margin-bottom:8px">Got ZIPs? Open them in the Data Explorer — drop in as many as you like to map, browse and annotate.</p>
+      <a href="https://somdeepkundu.github.io/cropview-v3/cropview-viewer-v2.html" target="_blank" rel="noopener" style="display:inline-block;font-family:var(--mono);font-size:11px;color:var(--green);text-decoration:none;border:1px solid var(--green2);border-radius:20px;padding:7px 16px;background:var(--surface2)">Open Data Explorer ↗</a>
+    </div>
+
+    <div class="asec">
+      <h4>🌐 Contact</h4>
+      <p><a href="https://somdeepkundu.github.io" target="_blank">somdeepkundu.github.io</a><br/>
+      <a href="https://github.com/somdeepkundu/cropview-v3" target="_blank">github.com/somdeepkundu/cropview-v3</a></p>
+    </div>
+
+    <div class="asec">
+      <h4>⚠️ Disclaimer</h4>
+      <div class="discbox">GPS coordinates, compass heading, altitude and ground footprint estimates depend on device sensor accuracy and may be inaccurate. Data from this app should not be used as the sole basis for agronomic or policy decisions. Sensor performance varies across devices. Always validate with ground truth data.</div>
+    </div>
+
+    <div class="asec">
+      <h4>©️ Copyright</h4>
+      <p>© 2026 Somdeep Kundu · IIT Bombay<br/>
+      Released under <strong style="color:var(--green)">MIT License</strong>.<br/>
+      Free to use, modify and distribute with attribution.</p>
+    </div>
+  </div>
+</div>
+
+  <!-- HEADER -->
+<div id="header">
+  <div class="logo">CROP<span>VIEW</span> <span style="color:var(--green)">v3.4 LTR</span><span class="proj" id="hproj">—</span></div>
+  <div id="hdr-right">
+    <span id="cap-badge">0 cap</span>
+    <div id="gps-btn" onclick="openGPS()" style="font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 10px;cursor:pointer;transition:all .2s">📡 GPS</div>
+    <div id="about-btn" onclick="openAbout()">ⓘ ABOUT</div>
+    <div id="status-dot"></div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div id="tabs">
+  <div class="tab active" data-tab="camera" onclick="switchTab('camera')">📷 CAPTURE</div>
+  <div class="tab" data-tab="map" onclick="switchTab('map')">🗺 MAP</div>
+  <div class="tab" data-tab="data" onclick="switchTab('data')">📊 DATA</div>
+</div>
+
+<!-- APP -->
+<div id="app">
+
+  <!-- CAMERA -->
+  <div id="camera-panel" class="panel active">
+    <div id="vcont">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="fov-ol">
+        <div class="ch ch-h"></div>
+        <div class="ch ch-v"></div>
+        <div class="ch-c"></div>
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+      </div>
+
+      <!-- TILT GUIDE -->
+      <div id="tilt-guide">
+        <div id="tilt-bar">
+          <div id="tilt-zone"></div>
+          <div id="tilt-pin"></div>
+        </div>
+        <div id="tilt-deg">—°</div>
+        <div id="tilt-lbl">TILT</div>
+      </div>
+
+      <!-- COMPASS: fixed heading pointer at top, rotating rose underneath.
+           Tap to force a resync — see manualRecalibrate() below. -->
+      <div id="compass" onclick="manualRecalibrate()" title="Tap to recalibrate">
+        <svg viewBox="0 0 60 60">
+          <circle id="compass-ring" cx="30" cy="30" r="28" fill="rgba(8,13,26,.7)" stroke="#253047" stroke-width="1.5"/>
+          <!-- ROTATING ROSE — spins so current heading faces the fixed pointer -->
+          <g id="crose" style="transform-origin:30px 30px">
+            <text x="30" y="11" text-anchor="middle" font-family="Comfortaa,sans-serif" font-size="7" fill="#22d3ee">N</text>
+            <text x="30" y="54" text-anchor="middle" font-family="Comfortaa,sans-serif" font-size="7" fill="#94a3b8">S</text>
+            <text x="6"  y="33" text-anchor="middle" font-family="Comfortaa,sans-serif" font-size="7" fill="#94a3b8">W</text>
+            <text x="54" y="33" text-anchor="middle" font-family="Comfortaa,sans-serif" font-size="7" fill="#22d3ee">E</text>
+            <!-- tick marks -->
+            <line x1="30" y1="4" x2="30" y2="8" stroke="#22d3ee" stroke-width="1.5"/>
+            <line x1="30" y1="52" x2="30" y2="56" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="4" y1="30" x2="8" y2="30" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="52" y1="30" x2="56" y2="30" stroke="#94a3b8" stroke-width="1"/>
+          </g>
+          <!-- FIXED heading pointer — always at top, shows direction you're facing -->
+          <polygon points="30,13 27,24 30,21 33,24" fill="#22d3ee" opacity=".95"/>
+          <polygon points="30,47 27,36 30,39 33,36" fill="#475569" opacity=".7"/>
+          <circle cx="30" cy="30" r="2.5" fill="#22d3ee" opacity=".8"/>
+        </svg>
+        <div id="compass-tap">TAP TO RECAL</div>
+      </div>
+
+      <!-- HUD -->
+      <div id="hud">
+        <div class="hbadge dim" id="h-lat">LAT —</div>
+        <div class="hbadge dim" id="h-lon">LON —</div>
+        <div class="hbadge dim" id="h-az">AZ —°</div>
+        <div class="hbadge dim" id="h-src">SRC —</div>
+        <div class="hbadge dim" id="h-acc">ACC —</div>
+      </div>
+    </div>
+
+    <div id="cc">
+      <button class="btn bs" style="flex:.5" onclick="toggleCam()">⟳ FLIP</button>
+      <button class="btn bp" onclick="doCapture()">◉ CAPTURE</button>
+      <button class="btn bs" style="flex:.5" onclick="switchTab('map')">MAP →</button>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div id="map-panel" class="panel">
+    <div id="map"></div>
+    <div id="mc">
+      <button class="btn bs" onclick="centerMe()">⊕ POS</button>
+      <button class="btn bs" onclick="toggleSat()">🛰 SAT</button>
+      <button class="btn bs" id="fp-toggle-btn" onclick="toggleFootprints()">◧ FP ON</button>
+      <button class="btn bp" onclick="switchTab('camera')">◉ CAP</button>
+    </div>
+  </div>
+
+  <!-- DATA -->
+  <div id="data-panel" class="panel">
+    <div class="dc">
+      <h3>📋 Session</h3>
+      <div class="dr"><span class="dl">Project</span><span class="dv" id="d-proj" style="color:var(--amber)">—</span></div>
+      <div class="dr"><span class="dl">Notes</span><span class="dv" id="d-notes">—</span></div>
+      <div class="dr"><span class="dl">Started</span><span class="dv" id="d-start">—</span></div>
+    </div>
+
+    <div class="dc">
+      <h3>📡 Live Sensors</h3>
+      <div class="dr"><span class="dl">Latitude</span><span class="dv" id="d-lat">—</span></div>
+      <div class="dr"><span class="dl">Longitude</span><span class="dv" id="d-lon">—</span></div>
+      <div class="dr"><span class="dl">GPS Accuracy</span><span class="dv" id="d-acc">—</span></div>
+      <div class="dr"><span class="dl">Smoothed Samples</span><span class="dv" id="d-smp">—</span></div>
+      <div class="dr"><span class="dl">Altitude</span><span class="dv" id="d-alt">—</span></div>
+      <div class="dr"><span class="dl">Azimuth</span><span class="dv" id="d-az">—</span></div>
+      <div class="dr"><span class="dl">Sensors</span><span class="dv" id="d-sens">—</span></div>
+      <div class="dr"><span class="dl">Camera Tilt (nadir)</span><span class="dv" id="d-tilt">—</span></div>
+      <div class="dr"><span class="dl">Camera Height</span><span class="dv" id="d-camh">—</span></div>
+      <div class="dr"><span class="dl">Est. H-FOV</span><span class="dv" id="d-fov">~65°</span></div>
+      <div class="dr"><span class="dl">Ground Footprint</span><span class="dv" id="d-fp">—</span></div>
+    </div>
+
+    <div class="dc">
+      <h3>🌱 FAO-56 Kc Stage</h3>
+      <div class="kc-grid">
+        <div class="kcs" data-s="1" onclick="pickStage(1)"><div class="sn">Kc¹</div><div class="sl">Initial</div><div class="sv">0.3–0.4</div></div>
+        <div class="kcs" data-s="2" onclick="pickStage(2)"><div class="sn">Kc²</div><div class="sl">Development</div><div class="sv">0.4–0.9</div></div>
+        <div class="kcs" data-s="3" onclick="pickStage(3)"><div class="sn">Kc³</div><div class="sl">Mid-Season</div><div class="sv">0.9–1.2</div></div>
+        <div class="kcs" data-s="4" onclick="pickStage(4)"><div class="sn">Kc⁴</div><div class="sl">Late-Season</div><div class="sv">0.6–0.9</div></div>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6">Select stage before capturing. Embedded in GeoJSON for Layer 2 satellite correlation.</p>
+    </div>
+
+    <div class="dc">
+      <h3>📁 Captures (<span id="cc2">0</span>)</h3>
+      <div id="cap-list"><div class="es"><div style="font-size:34px">🌾</div>No captures yet.</div></div>
+    </div>
+
+    <div class="dc">
+      <h3>⬇ Export</h3>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">ZIP includes geocoded images, GeoJSON footprints, CSV and session README.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn bp" style="font-size:10px" onclick="doZIP()">📦 Export ZIP</button>
+        <button class="btn bs" style="font-size:10px" onclick="doGeoJSON()">Points GeoJSON</button>
+        <button class="btn bs" style="font-size:10px;border-color:var(--amber);color:var(--amber)" onclick="doFootprintsGJ()">◧ Footprints GeoJSON</button>
+        <button class="btn bs" style="font-size:10px" onclick="doCSV()">CSV</button>
+        <button class="btn bd" style="font-size:10px;flex:.6" onclick="doClear()">CLEAR</button>
+      </div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <p style="font-size:11px;color:var(--muted);line-height:1.6">Got ZIPs? Open them in the Data Explorer to map, browse and annotate — import as many as you like.</p>
+        <a href="https://somdeepkundu.github.io/cropview-v3/cropview-viewer-v2.html" target="_blank" rel="noopener" style="display:inline-block;font-family:var(--mono);font-size:10px;color:var(--green);text-decoration:none;border:1px solid var(--green2);border-radius:20px;padding:6px 14px;background:var(--surface2);white-space:nowrap">🗺️ Open Data Explorer ↗</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<canvas id="snap" style="display:none"></canvas>
+
+<script>
+const S = {
+  lat:null,lon:null,alt:null,acc:null,altAcc:null,lastGPSTime:null,
+  gpsSamples:0,
+  az:0,tilt:45,fov:65,
+  camH:1.5,            // camera height ABOVE GROUND in metres — NOT GPS altitude.
+                       // This is what the footprint geometry scales with; S.alt
+                       // (height above sea level) must never be used here.
+  // ── heading fusion (v3) ──
+  compassRaw:0,        // rear-camera heading from the orientation sensor (CW from north)
+  heading:0,           // camera heading used for the FOV polygon + exports
+  headingSrc:'—',      // active heading source label
+  signalState:'OK',    // OK | STALE | LOST — compass-stream health, see watchdogTick()
+  lowConfidence:false, // iOS: webkitCompassAccuracy says the reading is untrustworthy
+  gpsBearing:null,     // last GPS TRAVEL bearing — metadata only, never the camera heading
+  gpsBearingTime:0,    // timestamp of that bearing
+  prevFix:null,        // previous GPS fix, for bearing calc
+  // ── compass stream health (v3) ──
+  platform:null,          // 'ios' | 'other'
+  gotAbsolute:false,
+  platform:'unknown', sensorPerm:'unknown', compassStart:0, noSensorWarned:false,
+  oriCount:0, absCount:0,       // Android: has a *valid* deviceorientationabsolute reading arrived?
+  lastValidOriTime:null,   // last time we accepted a usable heading
+  lastAnyOriTime:null,     // last time an orientation event fired at all (valid or not)
+  lastMotionTime:null,     // last devicemotion heartbeat — proves the sensor stack itself is alive
+  lastAlphaSeen:null,      // for stuck-value detection
+  lastAlphaChangeTime:null,
+  lastResyncTime:0,
+  dispAz:0,                // smoothed rose angle (animation only, never exported)
+  stage:null,
+  caps:[],
+  facing:'environment',stream:null,
+  map:null,umark:null,fovL:null,rayL:null,coneL:null,capL:null,fpL:null,
+  sat:false,tile:null,
+  proj:{name:'',notes:'',t:''}
 };
 
+/* ── HEADING FUSION (v3) ───────────────────────────────────────────
+   v1 bug: Android deviceorientationabsolute.alpha increases COUNTER-
+   clockwise, but v1 used it raw — mirroring the heading.
+   v2 fixed the mirroring and added GPS-bearing fusion, but the FOV
+   cone still froze on some phones. The cause: the code trusted every
+   orientation event unconditionally and only ever redrew on an event.
+   Three real, device-specific DeviceOrientation quirks fell through:
+     1. An event fires with alpha === null (sensor still initialising,
+        or momentarily unavailable) — old code did `e.alpha||0`, which
+        silently reported due North as if it were a real reading.
+     2. `deviceorientationabsolute` fires once with garbage, latching
+        "gotAbsolute" forever and permanently blocking the relative-
+        event fallback even if the absolute stream later dies.
+     3. Some OEM builds keep firing events but the value itself freezes
+        (a known issue after backgrounding/foregrounding the tab).
+   v3 validates every reading, watches the stream's own health with a
+   watchdog (watchdogTick), and silently resubscribes when it detects
+   any of the three. If it genuinely can't get a fix it says so in the
+   SRC badge instead of showing a confident, wrong cone. A visible
+   rAF loop (visualLoop) also decouples rendering from event cadence,
+   so the compass rose and map cone stay live even between events.
+   Design informed by: flutter_compass (trust the OS-fused absolute
+   stream, corroborate with a second live sensor), the Camera-Overlay-
+   Android reference (continuous low-pass-filtered redraw, not just
+   on-event), and open-sensor-platform's calibrated/uncalibrated +
+   background-calibration architecture (explicit confidence state
+   instead of one opaque number). */
+const STALE_MS = 2500;     // no valid reading for this long → mark STALE, try a silent resync
+const LOST_MS = 8000;      // no valid reading for this long → mark LOST (still shows last-known)
+const STUCK_MS = 6000;     // events keep firing but the value hasn't moved → probably frozen
+const RESYNC_COOLDOWN = 5000;
 
+function screenAngle(){
+  if(screen.orientation && typeof screen.orientation.angle==='number') return screen.orientation.angle;
+  if(typeof window.orientation==='number') return window.orientation;
+  return 0;
+}
+function angDiff(a,b){ let d=Math.abs(a-b)%360; return d>180?360-d:d; }
 
-   
-mapPanel.setCenter(88.406, 24.383, 7);    
+/* Tilt of the REAR CAMERA axis measured from nadir (straight down).
+     0°  = camera pointing straight at the ground
+    90°  = camera on the horizon
+   >90°  = camera pointing above the horizon (at the sky — no ground intersection)
 
-var wbDistDrawn = wbDist.draw({
-        color: 'd10901',
-        strokeWidth: 2
-    });
-mapPanel.addLayer(wbDistDrawn, {}, "West Bengal")
+   v3.0 used Math.abs(e.beta||45), which was wrong three ways:
+     - it ignored gamma, so in landscape a phone aimed 45° down reported
+       beta≈0 and the app called it FLAT;
+     - Math.abs() made a phone aimed at the sky indistinguishable from one
+       aimed at the crop;
+     - `||45` turned a genuine beta===0 (phone flat, camera straight down)
+       into a fabricated 45° reading.
+   The device z-axis has world-vertical component cos(beta)cos(gamma), so the
+   rear camera (-z) sits acos(cos b · cos g) off nadir. Screen-rotation
+   independent, because it describes a physical axis, not the screen. */
+function tiltFromEvent(e){
+  const b=e.beta, g=e.gamma;
+  if(b===null||b===undefined||isNaN(b)) return null;
+  if(g===null||g===undefined||isNaN(g)) return null;
+  const br=b*Math.PI/180, gr=g*Math.PI/180;
+  let c = Math.cos(br)*Math.cos(gr);
+  c = Math.min(1, Math.max(-1, c));
+  return Math.round(Math.acos(c)*180/Math.PI);
+}
+function lerpAngle(a,b,t){ let d=((b-a+540)%360)-180; return ((a+d*t)%360+360)%360; }
 
+/* Heading of the REAR CAMERA axis (device -z), clockwise from north, from
+   the full W3C rotation R = Rz(alpha)·Rx(beta)·Ry(gamma), world = E,N,Up.
+   v3.1 used (360 - alpha + screenAngle), which is only right with the phone
+   near flat. Held upright (beta ≈ 90°, the normal way to shoot a field),
+   ZXY Euler angles hit gimbal lock: Chrome can report alpha and gamma
+   jumping together by ~180°, which leaves the physical rotation unchanged
+   but flips a heading built from alpha alone. The rotation matrix is
+   continuous through that, and describes the camera axis directly, so no
+   screen-orientation correction is needed (portrait or landscape).
+   When the camera points almost straight down its horizontal direction is
+   undefined, so we fall back to the direction of the phone's top edge. */
+function cameraHeading(alpha, beta, gamma){
+  const d=Math.PI/180;
+  const cA=Math.cos(alpha*d), sA=Math.sin(alpha*d);
+  const cB=Math.cos(beta*d),  sB=Math.sin(beta*d);
+  const cG=Math.cos(gamma*d), sG=Math.sin(gamma*d);
+  const east  = -(cA*sG + cG*sA*sB);
+  const north =   cA*cG*sB - sA*sG;
+  if(Math.hypot(east,north) < 0.17){          // camera within ~10° of nadir/zenith
+    return ((Math.atan2(-cB*sA, cA*cB)/d) + 360) % 360;   // phone-top direction
+  }
+  return ((Math.atan2(east, north)/d) + 360) % 360;
+}
 
+/* v3.2: the camera heading comes ONLY from the orientation sensor.
+   v2/v3.1 let the GPS travel bearing override the compass whenever the
+   phone had moved >=3 m in the last 6 s, and also used it to "auto-
+   calibrate" a compass offset. Both assumed the camera faces the direction
+   of travel. From a vehicle (or walking and shooting sideways) that is
+   false: every capture got the car's direction, the cone ignored phone
+   rotation, and the learned offset kept rotating the compass toward the
+   road even after stopping. GPS jitter of a few metres while standing
+   still triggered the same lock. The travel bearing is now kept only as
+   metadata (travel_bearing_deg / look_side in the export). */
+function fuseHeading(){
+  const compass = ((S.compassRaw % 360) + 360) % 360;
+  S.az = Math.round(compass);
+  const oriAge = S.lastValidOriTime ? Date.now()-S.lastValidOriTime : Infinity;
+  S.heading = compass; // always the last sensor reading; the label says how much to trust it
+  if(oriAge < STALE_MS){
+    S.headingSrc = S.lowConfidence ? 'COMPASS·LOW-CONF' : 'COMPASS';
+    S.signalState = S.lowConfidence ? 'STALE' : 'OK';
+  } else if(oriAge < LOST_MS){
+    S.headingSrc = 'STALE·HOLD';
+    S.signalState = 'STALE';
+  } else {
+    S.headingSrc = S.sensorPerm==='denied' ? 'SENSORS BLOCKED'
+                 : (!S.lastAnyOriTime ? 'NO SENSOR DATA' : 'SIGNAL LOST');
+    S.signalState = 'LOST';
+  }
+}
 
-//////////////////////////////////////////////////////////////////
-//feel free to mdify as per you use
-//Somdeep Kundu
-//Adra, West Bengal 19-02-2024  
-//Article51a(h) Indian Constitution 🇮🇳🐅🪷
-//"It shall be the duty of every citizens of India- 
-//to develop the scientific temper, humanism and the spirit of inquiry and reform;"
+/* Travel bearing (GPS) — fresh only if we moved recently. Metadata only. */
+function travelBearing(){
+  return (S.gpsBearing!==null && (Date.now()-S.gpsBearingTime) < 6000) ? S.gpsBearing : null;
+}
+/* Where the camera looks relative to the direction of travel. */
+function lookSide(rel){
+  if(rel===null) return null;
+  const a=Math.abs(rel);
+  if(a<=30) return 'AHEAD';
+  if(a>=150) return 'BEHIND';
+  return rel<0 ? 'LEFT' : 'RIGHT';
+}
+
+/* ── PERMISSIONS ── */
+async function initPermissions(){
+  document.getElementById('perm').classList.remove('on');
+  document.getElementById('proj-screen').classList.add('on');
+  startGPS(); startCompass();
+}
+
+function startProject(){
+  const n = document.getElementById('pname').value.trim();
+  if(!n){toast('Enter a project name','err');return;}
+  S.proj.name  = n.replace(/[^a-zA-Z0-9_\-.]/g,'_');
+  S.proj.notes = document.getElementById('pnotes').value.trim();
+  const ch = parseFloat(document.getElementById('pcamh').value);
+  if(!isFinite(ch) || ch < 0.2 || ch > 30){ toast('Camera height must be 0.2–30 m','err'); return; }
+  S.camH = ch;
+  S.proj.t     = new Date().toISOString();
+  document.getElementById('proj-screen').classList.remove('on');
+  document.getElementById('hproj').textContent = S.proj.name;
+  startCamera(); initMap(); loadCaps(); updData();
+  setDot('active');
+  toast('Session: '+S.proj.name,'ok');
+}
+
+/* ── CAMERA ── */
+async function startCamera(){
+  try{
+    if(S.stream) S.stream.getTracks().forEach(t=>t.stop());
+    S.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:S.facing,width:{ideal:1920},height:{ideal:1080}}});
+    document.getElementById('video').srcObject = S.stream;
+  }catch(e){toast('Camera: '+e.message,'err');}
+}
+function toggleCam(){S.facing=S.facing==='environment'?'user':'environment';startCamera();}
+
+/* ── GPS ── */
+const GPS_BUF = [];           // rolling buffer of raw readings
+const GPS_BUF_MAX = 6;        // keep last 6 readings
+const GPS_LOCK_THR = 12;      // metres — threshold to consider GPS "locked"
+
+function gpsSmooth(){
+  if(!GPS_BUF.length) return null;
+  // sort best→worst accuracy, drop the worst reading once we have 3+
+  const sorted = [...GPS_BUF].sort((a,b)=>a.acc-b.acc);
+  const use = sorted.length >= 3 ? sorted.slice(0,-1) : sorted;
+  // inverse-variance weighted average (weight = 1 / acc²)
+  let tw=0, wlat=0, wlon=0, walt=0, hasAlt=false;
+  use.forEach(r=>{
+    const w=1/(r.acc*r.acc);
+    tw+=w; wlat+=r.lat*w; wlon+=r.lon*w;
+    if(r.alt!==null){walt+=r.alt*w; hasAlt=true;}
+  });
+  return{lat:wlat/tw, lon:wlon/tw, alt:hasAlt?walt/tw:null,
+         acc:use[0].acc, altAcc:use[0].altAcc, samples:use.length};
+}
+
+function startGPS(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(p=>{
+    GPS_BUF.push({lat:p.coords.latitude,lon:p.coords.longitude,
+      alt:p.coords.altitude,acc:p.coords.accuracy,
+      altAcc:p.coords.altitudeAccuracy});
+    if(GPS_BUF.length>GPS_BUF_MAX) GPS_BUF.shift();
+    const g=gpsSmooth();
+    if(g){
+      S.lat=g.lat; S.lon=g.lon; S.alt=g.alt;
+      S.acc=g.acc; S.altAcc=g.altAcc; S.gpsSamples=g.samples;
+
+      /* ── GPS travel bearing ──
+         Direction of MOVEMENT, not of the camera. Recorded as metadata
+         only (see fuseHeading). Needs a real move, not GPS jitter:
+         the step must exceed the fix accuracy as well as 3 m. */
+      if(S.prevFix){
+        const moved = turf.distance(
+          turf.point([S.prevFix.lon,S.prevFix.lat]),
+          turf.point([g.lon,g.lat]), {units:'meters'});
+        if(moved >= Math.max(3, g.acc) && g.acc < 25){
+          const br = (turf.bearing(
+            turf.point([S.prevFix.lon,S.prevFix.lat]),
+            turf.point([g.lon,g.lat])) + 360) % 360;
+          S.gpsBearing = br;
+          S.gpsBearingTime = Date.now();
+          S.prevFix = {lat:g.lat, lon:g.lon};
+        }
+      } else {
+        S.prevFix = {lat:g.lat, lon:g.lon};
+      }
+      fuseHeading();
+    }
+    S.lastGPSTime=Date.now();
+    recordGPSHistory(p.coords.accuracy);
+    updHUD(); updData(); updMapPos(); updFov();
+  },e=>toast('GPS: '+e.message,'err'),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+}
+
+/* ── COMPASS ──────────────────────────────────────────────────────
+   Two independent problems, handled separately:
+   (a) getting a *heading value at all* — the platform-specific event
+       wiring below.
+   (b) knowing when that value has gone stale, invalid or stuck, and
+       recovering — trackAlphaChange(), watchdogTick(), resyncOrientation().
+   applyHeading() is the single funnel every valid reading passes
+   through; anything that doesn't validate never reaches it. */
+/* v3.2.1 — THE ROOT CAUSE OF "SIGNAL LOST" ON ANDROID.
+   Up to v3.2.0 the app decided "this is an iPhone" by checking whether
+   DeviceOrientationEvent.requestPermission exists. Only Safari had it —
+   until Chrome 151 (July 2026) shipped the same API on Android. From then
+   on every updated Android phone took the iOS branch, listened only for
+   Apple's webkitCompassHeading (which Android never sends), and dropped
+   every reading, tilt included: heading stuck at 0°, tilt stuck at its 45°
+   default, SIGNAL LOST, and in v3.1 the GPS travel direction silently took
+   over as the "camera" heading.
+   Now: ask for permission wherever the API exists (it must happen inside
+   the button tap), always attach every listener, and let each EVENT say
+   which platform it came from. */
+function requestSensorPermission(){
+  const asks = [];
+  if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function')
+    asks.push(DeviceOrientationEvent.requestPermission().catch(()=> 'error'));
+  if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function')
+    asks.push(DeviceMotionEvent.requestPermission().catch(()=> 'error'));
+  if(!asks.length){ S.sensorPerm = 'n/a'; return Promise.resolve('n/a'); }
+  return Promise.all(asks).then(r=>{
+    S.sensorPerm = r.includes('denied') ? 'denied' : (r.includes('granted') ? 'granted' : 'unknown');
+    if(S.sensorPerm==='denied') toast('Motion sensors blocked — allow them in browser site settings','err');
+    return S.sensorPerm;
+  });
+}
+function startCompass(){
+  S.platform = 'unknown';          // set from the first real event (onOri)
+  S.compassStart = Date.now();
+  requestSensorPermission();       // called synchronously inside the tap
+  attachOrientationListeners();
+  window.addEventListener('devicemotion', onMotion, true);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  setInterval(watchdogTick, 1000);
+  requestAnimationFrame(visualLoop);
+}
+
+function attachOrientationListeners(){
+  // Android: deviceorientationabsolute gives a true-north reference.
+  // deviceorientation carries iOS's webkitCompassHeading, and on Android is
+  // used for tilt, and for heading only if it declares itself absolute.
+  window.addEventListener('deviceorientationabsolute', onOriAbs, true);
+  window.addEventListener('deviceorientation', onOri, true);
+}
+function detachOrientationListeners(){
+  window.removeEventListener('deviceorientationabsolute', onOriAbs, true);
+  window.removeEventListener('deviceorientation', onOri, true);
+}
+
+function trackAlphaChange(raw){
+  const now = Date.now();
+  if(S.lastAlphaSeen===null){ S.lastAlphaSeen=raw; S.lastAlphaChangeTime=now; return; }
+  if(angDiff(raw, S.lastAlphaSeen) > 0.15) S.lastAlphaChangeTime = now;
+  S.lastAlphaSeen = raw;
+}
+
+function applyTilt(e){
+  const t = tiltFromEvent(e);
+  if(t !== null){ S.tilt = t; updTilt(); }  // null => hold last good tilt, never invent one
+}
+function applyHeading(headingDeg){
+  S.compassRaw = (headingDeg%360+360)%360;
+  S.lastValidOriTime = Date.now();
+  fuseHeading();
+  updHUD(); updData();
+}
+
+function onOriAbs(e){
+  S.lastAnyOriTime = Date.now();
+  S.absCount = (S.absCount||0) + 1;
+  if(S.platform==='unknown') S.platform = 'android';
+  if(e.alpha===null || e.alpha===undefined || isNaN(e.alpha)) return; // invalid — never treat as 0/North
+  // Latch ONLY here, below the validation. Latching on the bare event (as v3.0
+  // did) let a single alpha===null absolute event kill the relative fallback
+  // permanently — the compass then never recovered.
+  if(e.beta===null || e.gamma===null || isNaN(e.beta) || isNaN(e.gamma)) return;
+  S.gotAbsolute = true;
+  trackAlphaChange(e.alpha);
+  applyTilt(e);
+  applyHeading(cameraHeading(e.alpha, e.beta, e.gamma));
+}
+function onOri(e){
+  S.lastAnyOriTime = Date.now();
+  S.oriCount = (S.oriCount||0) + 1;
+  applyTilt(e);                    // beta/gamma are gravity-referenced on every platform
+  const h = e.webkitCompassHeading;
+  if(typeof h === 'number' && !isNaN(h)){
+    // iOS Safari — already a compass heading, clockwise from north
+    S.platform = 'ios';
+    trackAlphaChange(h);
+    const acc = e.webkitCompassAccuracy; // degrees; -1 or large means "don't trust this"
+    S.lowConfidence = (typeof acc==='number') && (acc<0 || acc>40);
+    applyHeading(h);
+    return;
+  }
+  if(S.platform==='unknown' && e.beta!==null && e.beta!==undefined) S.platform = 'android';
+  if(S.gotAbsolute) return; // a valid absolute stream is alive — ignore this one for heading
+  // Chrome/Android's plain 'deviceorientation' alpha is RELATIVE to an
+  // arbitrary start direction — never use it as a compass.
+  if(e.absolute !== true) return;
+  if(e.alpha===null || e.alpha===undefined || isNaN(e.alpha)) return;
+  if(e.beta===null || e.gamma===null || isNaN(e.beta) || isNaN(e.gamma)) return;
+  trackAlphaChange(e.alpha);
+  applyHeading(cameraHeading(e.alpha, e.beta, e.gamma));
+}
+function onMotion(){ S.lastMotionTime = Date.now(); } // heartbeat only — proves the sensor stack is alive
+
+function onVisibilityChange(){
+  // Backgrounding/foregrounding the tab is a common trigger for a frozen
+  // orientation stream on Android — force a clean resync on return.
+  if(document.visibilityState==='visible') resyncOrientation();
+}
+
+function resyncOrientation(force){
+  const now = Date.now();
+  if(!force && (now - S.lastResyncTime) < RESYNC_COOLDOWN) return;
+  S.lastResyncTime = now;
+  S.gotAbsolute = false;
+  S.lastAlphaChangeTime = now;
+  detachOrientationListeners();
+  attachOrientationListeners();
+}
+
+function manualRecalibrate(){
+  requestSensorPermission().then(()=>{
+    resyncOrientation(true);
+    if(S.sensorPerm!=='denied') toast('Recalibrating — move the phone in a figure-8','ok');
+  });
+}
+
+/* Watchdog: runs every second regardless of whether any sensor event
+   has fired. This is what actually fixes "works sometimes" — instead
+   of silently freezing, a dead or stuck stream is detected within a
+   couple of seconds, the UI reflects it (SRC badge + compass ring
+   colour), and Android streams are auto-resubscribed. */
+function watchdogTick(){
+  const now = Date.now();
+  const sinceValid = S.lastValidOriTime ? now-S.lastValidOriTime : Infinity;
+  const sinceAnyOri = S.lastAnyOriTime ? now-S.lastAnyOriTime : Infinity;
+  const sinceMotion = S.lastMotionTime ? now-S.lastMotionTime : Infinity;
+  const stuck = S.lastAlphaChangeTime && (now-S.lastAlphaChangeTime) > STUCK_MS && sinceAnyOri < 3000;
+  const deadStream = sinceValid > STALE_MS && sinceMotion < 3000;
+  if(stuck || deadStream) resyncOrientation(false);
+  // Nothing at all 5 s after start: tell the user once, with the fix.
+  if(!S.lastAnyOriTime && !S.noSensorWarned && S.compassStart && now-S.compassStart > 5000){
+    S.noSensorWarned = true;
+    toast(S.sensorPerm==='denied' ? 'Motion sensors blocked — Chrome ⋮ › Settings › Site settings › Motion sensors'
+                                  : 'No compass data — tap the compass to retry','err');
+  }
+  fuseHeading(); updHUD(); updData();
+}
+
+/* rAF render loop — decouples the compass rose + map cone from event
+   cadence entirely, so they stay visibly live between sensor events
+   instead of only redrawing when one happens to fire. */
+let _lastFovDraw = 0;
+function visualLoop(ts){
+  S.dispAz = lerpAngle(S.dispAz, S.heading, 0.2);  // fused heading, so rose and map cone always agree
+  const crose = document.getElementById('crose');
+  if(crose) crose.style.transform = `rotate(${-S.dispAz}deg)`;
+  if(!_lastFovDraw || ts - _lastFovDraw > 120){ updFov(); _lastFovDraw = ts; }
+  paintCompassHealth();
+  requestAnimationFrame(visualLoop);
+}
+function paintCompassHealth(){
+  const ring = document.getElementById('compass-ring');
+  if(!ring) return;
+  ring.setAttribute('stroke', S.signalState==='OK' ? '#2a3d2a' : S.signalState==='STALE' ? 'var(--amber)' : 'var(--red)');
+}
+
+/* ── TILT GUIDE ── */
+function updTilt(){
+  const t=S.tilt, H=130;
+  // Tilt is measured from nadir: 0° = camera straight down, 90° = horizon,
+  // >90° = aimed above the horizon (sky — no ground footprint exists).
+  // Optimal: 30°–50°
+  const pct = Math.min(Math.max(t/90,0),1);
+  const pin = pct*(H-4);
+  // optimal zone
+  const oz = document.getElementById('tilt-zone');
+  const oTop = (30/90)*H, oBot = (52/90)*H;
+  oz.style.top=oTop+'px'; oz.style.height=(oBot-oTop)+'px';
+  const pinEl = document.getElementById('tilt-pin');
+  pinEl.style.top=pin+'px';
+  const ok = t>=28&&t<=55;
+  pinEl.className = ok?'':'warn'; pinEl.id='tilt-pin';
+  const degEl = document.getElementById('tilt-deg');
+  degEl.textContent=t+'°'; degEl.className=ok?'':'warn'; degEl.id='tilt-deg';
+  const lbl = document.getElementById('tilt-lbl');
+  if(S.lat && !calcFP()) lbl.textContent='SKY ✕';
+  else if(t>=TILT_MAX) lbl.textContent='HORIZON';
+  else if(t<15) lbl.textContent='FLAT';
+  else if(t>65) lbl.textContent='STEEP';
+  else if(ok) lbl.textContent='✓ GOOD';
+  else lbl.textContent='TILT';
+}
+
+/* ── HUD ── */
+function updHUD(){
+  document.getElementById('h-lat').textContent=S.lat?'LAT '+S.lat.toFixed(5):'LAT —';
+  document.getElementById('h-lon').textContent=S.lon?'LON '+S.lon.toFixed(5):'LON —';
+  document.getElementById('h-az').textContent='HDG '+Math.round(S.heading)+'° '+azLbl(S.heading);
+  document.getElementById('h-src').textContent='SRC '+S.headingSrc;
+  // Show smoothed accuracy + sample count
+  const locked = S.acc && S.acc <= GPS_LOCK_THR;
+  const smpTxt = S.gpsSamples > 1 ? ` ×${S.gpsSamples}` : '';
+  document.getElementById('h-acc').textContent = S.acc
+    ? (locked ? '⊕ ' : '') + 'ACC ±'+S.acc.toFixed(1)+'m'+smpTxt
+    : 'ACQUIRING…';
+  ['h-lat','h-lon','h-az','h-src','h-acc'].forEach(id=>document.getElementById(id).classList.remove('warn','bad','dim'));
+  if(!S.lat) { document.getElementById('h-lat').classList.add('dim'); document.getElementById('h-lon').classList.add('dim'); }
+  if(!S.acc) document.getElementById('h-acc').classList.add('warn');
+  else if(S.acc>20) document.getElementById('h-acc').classList.add('warn');
+  // heading source health → colour h-src (and h-az, same value) to match compass ring
+  const srcCls = S.signalState==='LOST' ? 'bad' : (S.signalState==='STALE' ? 'warn' : null);
+  if(srcCls){ document.getElementById('h-src').classList.add(srcCls); document.getElementById('h-az').classList.add(srcCls); }
+  // GPS button colour
+  const gb = document.getElementById('gps-btn');
+  if(!S.acc)        { gb.style.color='var(--muted)'; gb.style.borderColor='var(--border)'; }
+  else if(S.acc<12) { gb.style.color='var(--green)'; gb.style.borderColor='var(--green2)'; }
+  else if(S.acc<25) { gb.style.color='var(--amber)'; gb.style.borderColor='var(--amber)'; }
+  else              { gb.style.color='var(--red)';   gb.style.borderColor='var(--red)'; }
+}
+
+/* ── DATA PANEL ── */
+function updData(){
+  const set=(id,v)=>{const e=document.getElementById(id);if(!e)return;e.textContent=v||'—';e.classList.toggle('na',!v||v==='—');};
+  set('d-proj',S.proj.name||null);
+  set('d-notes',S.proj.notes||null);
+  set('d-start',S.proj.t?new Date(S.proj.t).toLocaleString():null);
+  set('d-lat',S.lat?S.lat.toFixed(7)+'°':null);
+  set('d-lon',S.lon?S.lon.toFixed(7)+'°':null);
+  set('d-acc',S.acc?'± '+S.acc.toFixed(1)+' m'+(S.acc<=GPS_LOCK_THR?' ⊕ LOCKED':''):null);
+  set('d-smp',S.gpsSamples>0?S.gpsSamples+' / '+GPS_BUF_MAX+' (drop-worst averaging)':null);
+  set('d-alt',S.alt?S.alt.toFixed(1)+' m':null);
+  set('d-az',Math.round(S.heading)+'° '+azLbl(S.heading)+'  ['+S.headingSrc+']');
+  set('d-sens',S.platform+' · perm '+S.sensorPerm+' · abs '+(S.absCount||0)+' · ori '+(S.oriCount||0));
+  set('d-tilt',S.tilt+'° from nadir'+(S.tilt>90?' — above horizon':(S.tilt>=TILT_MAX?' — at horizon':'')));
+  set('d-camh',S.camH.toFixed(2)+' m above ground');
+  const fp=calcFP();
+  set('d-fp',fp?fp.w.toFixed(1)+' × '+fp.d.toFixed(1)+' m'+(fp.farCapped?' (far edge clipped)':''):(S.lat?'— (aimed above horizon)':null));
+}
+function azLbl(a){return['N','NE','E','SE','S','SW','W','NW','N'][Math.round(a/45)%8];}
+
+/* ── FOOTPRINT ───────────────────────────────────────────────────
+   CRITICAL: H is the camera's height ABOVE GROUND (S.camH, ~1.5 m).
+   v3.0 used `S.alt || 1.5` — S.alt is GPS altitude above SEA LEVEL, so on
+   the Maharashtra plateau (~650 m) every footprint came out ~400x too
+   large and every exported fov_polygon covered a whole village. Never
+   reintroduce S.alt here; it is a different quantity entirely.
+
+   Geometry, with tilt measured from nadir:
+     ground range  r(t)  = H·tan(t)
+     slant range   R(r)  = sqrt(H² + r²)
+     half-width at r     = R(r)·tan(hfov/2)     (slant range, not ground range)
+   Depth is the true near-to-far spread, H·(tan(t+v/2) − tan(t−v/2)), not
+   the old gd·tan(v) approximation. Vertical FOV is derived through the
+   tangent, since FOV angles do not scale linearly with aspect ratio. */
+const TILT_MAX = 85;   // beyond this the ray is effectively at/above the horizon
+
+/* v3.2: v3.1 returned null (no cone, capture blocked) as soon as the
+   camera CENTRE reached 85° — i.e. whenever the phone was held upright to
+   look across a field. The lower half of that frame still sees ground, so
+   now the footprint is dropped only when the BOTTOM edge of the frame is
+   at/above the cap; otherwise the far edge is clipped at the cap and the
+   footprint is flagged farCapped. */
+function calcFP(){
+  if(!S.lat||!S.lon) return null;
+  const H = S.camH, t = S.tilt;
+  if(!isFinite(t)) return null;
+  const tr = t*Math.PI/180;
+  const hr = S.fov*Math.PI/180;
+  const vr = 2*Math.atan(Math.tan(hr/2)*(9/16));   // 16:9 sensor, correct tangent form
+  const cap = TILT_MAX*Math.PI/180;
+  const tNear = Math.max(tr - vr/2, 0);
+  if(tNear >= cap) return null;                     // whole frame at/above the horizon
+  const tFar  = Math.min(tr + vr/2, cap);
+  const near = H*Math.tan(tNear);
+  const far  = H*Math.tan(tFar);
+  const gd   = H*Math.tan(Math.min(tr, cap));
+  const halfW = r => Math.sqrt(H*H + r*r)*Math.tan(hr/2);
+  return {near, far, gd, wNear:halfW(near)*2, wFar:halfW(far)*2,
+          w: halfW(gd)*2, d: far - near, farCapped: (tr + vr/2) > cap};
+}
+function calcPoly(heading){
+  if(!S.lat||!S.lon) return null;
+  const fp=calcFP(); if(!fp) return null;
+  const h = (heading===undefined) ? S.heading : heading;
+  const O=turf.point([S.lon,S.lat]), b=((h%360)+360)%360;
+  const at=(r,off)=>{
+    const c=turf.destination(O, r/1000, b).geometry.coordinates;
+    return off===0 ? c : turf.destination(turf.point(c), Math.abs(off)/1000, b+(off>0?90:-90)).geometry.coordinates;
+  };
+  const nL=at(fp.near,-fp.wNear/2), nR=at(fp.near, fp.wNear/2);
+  const fL=at(fp.far, -fp.wFar/2),  fR=at(fp.far,  fp.wFar/2);
+  return [nL,fL,fR,nR,nL];
+}
+
+/* ── MAP ── */
+function initMap(){
+  S.map=L.map('map',{center:[20,0],zoom:3,zoomControl:true,attributionControl:false});
+  S.tile=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(S.map);
+  S.capL=L.layerGroup().addTo(S.map);
+  S.fpL=L.layerGroup().addTo(S.map);  // dedicated footprint polygon layer
+  S.map.on('move zoom',updFov);
+}
+function updMapPos(){
+  if(!S.lat||!S.lon||!S.map) return;
+  if(!S.umark){
+    const ico=L.divIcon({html:`<div style="width:14px;height:14px;background:var(--green);border-radius:50%;border:2px solid #fff;box-shadow:0 0 8px rgba(76,255,114,.6)"></div>`,iconSize:[14,14],iconAnchor:[7,7],className:''});
+    S.umark=L.marker([S.lat,S.lon],{icon:ico}).addTo(S.map);
+    S.map.setView([S.lat,S.lon],17);
+  } else S.umark.setLatLng([S.lat,S.lon]);
+  updFov();
+}
+/* Live view cone. The TRUE ground footprint at 1.5 m camera height is only
+   a few metres long — 1–3 px at street zoom, which is why "the cone we used
+   to have" seemed to vanish after v3.1 (v3.0's huge cone came from wrongly
+   using altitude above sea level). So the map now draws two things:
+     • a view cone — the camera's horizontal FOV wedge, a fixed ~90 px long
+       on screen at any zoom, so the look direction is always visible;
+     • the true footprint (dashed) — visible when you zoom in, and what is
+       actually exported.
+   Layers are created once and moved with setLatLngs; drawn from the smoothed
+   heading; colour = compass health (green OK · amber stale · red lost). */
+const CONE_PX = 90;
+function updFov(){
+  if(!S.map || !S.lat || !S.lon) return;
+  const mp = document.getElementById('map-panel');
+  if(mp && !mp.classList.contains('active')) return;
+  const h = S.dispAz;
+  const col = S.signalState==='OK' ? '#4cff72' : (S.signalState==='STALE' ? '#ffb347' : '#ff5c5c');
+  const O = turf.point([S.lon,S.lat]);
+  const mpp = 156543.03392*Math.cos(S.lat*Math.PI/180)/Math.pow(2, S.map.getZoom());
+  const len = Math.max(CONE_PX*mpp, 3);                       // metres
+  const dest = (m,b)=>{ const c=turf.destination(O, m/1000, b).geometry.coordinates; return [c[1],c[0]]; };
+  const cone = [[S.lat,S.lon]];
+  for(let i=0;i<=10;i++) cone.push(dest(len, h - S.fov/2 + S.fov*i/10));
+  const ray = [[S.lat,S.lon], dest(len*1.15, h)];
+  if(!S.coneL) S.coneL = L.polygon(cone,{color:col,weight:1,fillColor:col,fillOpacity:.22,interactive:false}).addTo(S.map);
+  else { S.coneL.setLatLngs(cone); S.coneL.setStyle({color:col,fillColor:col}); }
+  if(!S.rayL) S.rayL = L.polyline(ray,{color:col,weight:2,opacity:.95,interactive:false}).addTo(S.map);
+  else { S.rayL.setLatLngs(ray); S.rayL.setStyle({color:col}); }
+  const c = calcPoly(h);
+  if(!c){ if(S.fovL){ S.map.removeLayer(S.fovL); S.fovL=null; } return; }
+  const ll = c.map(p=>[p[1],p[0]]);
+  if(!S.fovL) S.fovL = L.polygon(ll,{color:'#ffffff',weight:1.5,fillColor:col,fillOpacity:.35,dashArray:'3 3',interactive:false}).addTo(S.map);
+  else { S.fovL.setLatLngs(ll); S.fovL.setStyle({fillColor:col}); }
+}
+function centerMe(){if(S.lat&&S.lon)S.map.setView([S.lat,S.lon],18);else toast('Waiting for GPS…','err');}
+function toggleSat(){
+  S.sat=!S.sat; S.map.removeLayer(S.tile);
+  S.tile=L.tileLayer(S.sat?'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}':'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(S.map);
+  toast(S.sat?'Satellite ON':'OSM ON','ok');
+}
+
+/* ── CAPTURE ── */
+function doCapture(){
+  if(!S.lat||!S.lon){toast('No GPS fix yet','err');return;}
+  if(S.acc>30){toast('GPS too weak (±'+S.acc.toFixed(0)+'m) — move to open sky','err');return;}
+  if(S.acc>GPS_LOCK_THR) toast('Weak GPS ±'+S.acc.toFixed(0)+'m — accuracy may be low','');
+  const vid=document.getElementById('video'), cv=document.getElementById('snap');
+  cv.width=vid.videoWidth||640; cv.height=vid.videoHeight||480;
+  cv.getContext('2d').drawImage(vid,0,0);
+  const now=new Date();
+  const ts=now.toISOString().replace(/[-:T]/g,'').split('.')[0];
+  const la=S.lat.toFixed(5).replace('.','p'), lo=S.lon.toFixed(5).replace('.','p');
+  const nm=`${S.proj.name}_CV-${Date.now()}_${ts}_${la}_${lo}`;
+  const thumb=cv.toDataURL('image/jpeg',.4), full=cv.toDataURL('image/jpeg',.85);
+  const sl=document.createElement('div');sl.className='scanl';
+  document.getElementById('vcont').appendChild(sl);setTimeout(()=>sl.remove(),700);
+  const fp=calcFP(), poly=calcPoly();
+  if(!fp) { toast('Camera is above the horizon — tilt down before capturing','err'); return; }
+  if(S.signalState==='LOST') toast('No compass fix — heading for this shot is unreliable','err');
+  const tb = travelBearing();
+  const rel = tb===null ? null : Math.round(((S.heading - tb + 540) % 360) - 180);
+  const cap={id:'CV-'+Date.now(),imgName:nm,timestamp:now.toISOString(),project:S.proj.name,
+    lat:S.lat,lon:S.lon,altitude:S.alt,accuracy:S.acc,az:Math.round(S.heading),
+    headingSrc:S.headingSrc,tilt:S.tilt,camH:S.camH,fov:S.fov,
+    travelBrg: tb===null ? null : Math.round(tb), lookRel: rel, lookSide: lookSide(rel),
+    stage:S.stage,fp:fp?{w:fp.w,d:fp.d,farCapped:!!fp.farCapped}:null,poly,thumb,full};
+  S.caps.unshift(cap); saveCaps(); pinOnMap(cap); rendList();
+  document.getElementById('cap-badge').textContent=S.caps.length+' cap';
+  toast('Saved: '+nm.substring(0,28)+'…','ok');
+}
+
+function pinOnMap(c){
+  if(!S.map) return;
+  const ico=L.divIcon({html:`<div style="width:10px;height:10px;background:var(--amber);border-radius:50%;border:2px solid #fff;box-shadow:0 0 6px rgba(245,200,66,.7)"></div>`,iconSize:[10,10],iconAnchor:[5,5],className:''});
+  const m=L.marker([c.lat,c.lon],{icon:ico});
+  m.bindPopup(`<div style="font-family:Space Mono,monospace;font-size:10px"><b>${c.id}</b><br/>${new Date(c.timestamp).toLocaleString()}<br/>AZ:${c.az}° Kc:${c.stage?'Stage '+c.stage:'—'}</div>`);
+  S.capL.addLayer(m);
+  // Footprints go in dedicated layer
+  if(c.poly) S.fpL.addLayer(L.polygon(c.poly.map(p=>[p[1],p[0]]),{color:'#f5c842',weight:1.5,fillColor:'#f5c842',fillOpacity:.12}));
+}
+
+let fpVisible=true;
+function toggleFootprints(){
+  fpVisible=!fpVisible;
+  if(fpVisible) S.map.addLayer(S.fpL);
+  else S.map.removeLayer(S.fpL);
+  document.getElementById('fp-toggle-btn').textContent=fpVisible?'◧ FP ON':'◫ FP OFF';
+  document.getElementById('fp-toggle-btn').style.color=fpVisible?'var(--amber)':'var(--muted)';
+  toast('Footprints '+(fpVisible?'visible':'hidden'));
+}
+
+/* ── LIST ── */
+function rendList(){
+  const el=document.getElementById('cap-list');
+  document.getElementById('cc2').textContent=S.caps.length;
+  document.getElementById('cap-badge').textContent=S.caps.length+' cap';
+  if(!S.caps.length){el.innerHTML=`<div class="es"><div style="font-size:34px">🌾</div>No captures yet.</div>`;return;}
+  el.innerHTML=S.caps.map((c,i)=>`
+    <div class="ci">
+      <img class="cthumb" src="${c.thumb}"/>
+      <div class="cmeta">
+        <div class="cid">${c.id}</div>
+        <div class="cdet">
+          ${new Date(c.timestamp).toLocaleString()}<br/>
+          ${c.lat.toFixed(5)}, ${c.lon.toFixed(5)}<br/>
+          AZ:${c.az}° · Tilt:${c.tilt}° · Kc:${c.stage?'Stage '+c.stage:'—'}<br/>
+          <span style="color:var(--green);font-size:10px">${c.imgName||c.id}</span>
+        </div>
+        <div class="cact">
+          <span class="chip g" onclick="jumpMap(${i})">MAP</span>
+          <span class="chip" onclick="dlCap(${i})">SAVE</span>
+          <span class="chip" onclick="delCap(${i})">DEL</span>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function jumpMap(i){const c=S.caps[i];switchTab('map');setTimeout(()=>S.map.setView([c.lat,c.lon],18),100);}
+function dlCap(i){const c=S.caps[i],a=document.createElement('a');a.href=c.full;a.download=(c.imgName||c.id)+'.jpg';a.click();}
+function delCap(i){S.caps.splice(i,1);saveCaps();rendList();toast('Deleted');}
+
+/* ── KC ── */
+function pickStage(n){
+  S.stage=n;
+  document.querySelectorAll('.kcs').forEach(e=>e.classList.toggle('on',parseInt(e.dataset.s)===n));
+  toast('Kc Stage '+n+' selected','ok');
+}
+
+/* ── ZIP EXPORT ── */
+async function doZIP(){
+  if(!S.caps.length){toast('No captures','err');return;}
+  if(typeof JSZip==='undefined'){toast('JSZip not ready','err');return;}
+  toast('Building ZIP…');
+  const zip=new JSZip(), pn=S.proj.name||'CropView';
+  const imgs=zip.folder('images'), data=zip.folder('data');
+  S.caps.forEach(c=>{if(c.full){const b=c.full.split(',')[1];imgs.file((c.imgName||c.id)+'.jpg',b,{base64:true});}});
+  data.file(pn+'_captures_points.geojson',JSON.stringify(buildGJ(),null,2));
+  data.file(pn+'_captures_footprints.geojson',JSON.stringify(buildFootprintsGJ(),null,2));
+  data.file(pn+'_captures.csv',buildCSV());
+  zip.file('README.txt',[
+    'CropView Export · '+pn,
+    '═══════════════════════════',
+    'Notes:    '+(S.proj.notes||'—'),
+    'Session:  '+(S.proj.t||'—'),
+    'Exported: '+new Date().toISOString(),
+    'Captures: '+S.caps.length,
+    '',
+    'images/  → geocoded JPEGs  {Project}_{ID}_{Timestamp}_{Lat}_{Lon}.jpg',
+    'data/    → points GeoJSON (capture locations)',
+    '           footprints GeoJSON (FOV ground polygons — use for satellite pixel sampling)',
+    '           CSV of all captures',
+    '',
+    'Developed by Somdeep Kundu',
+    'RuDRA Lab · C-TARA · IIT Bombay',
+    'RGSTC Maharashtra Government Project',
+    'https://somdeepkundu.github.io',
+    '© 2026 Somdeep Kundu · MIT License',
+  ].join('\n'));
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=pn+'_CropView_'+new Date().toISOString().split('T')[0]+'.zip'; a.click();
+  URL.revokeObjectURL(url);
+  toast('ZIP exported ✓','ok');
+}
+
+function buildGJ(){
+  return{type:'FeatureCollection',
+    metadata:{app:'CropView L1',version:'3.4.0',release:'LTR',project:S.proj.name,notes:S.proj.notes,exported:new Date().toISOString(),captures:S.caps.length},
+    features:S.caps.map(c=>({type:'Feature',
+      geometry:{type:'Point',coordinates:[c.lon,c.lat,c.altitude||0]},
+      properties:{id:c.id,imgName:(c.imgName||c.id)+'.jpg',timestamp:c.timestamp,project:c.project,
+        heading_deg:c.az,azimuth_deg:c.az,heading_source:c.headingSrc||null,
+        tilt_deg_from_nadir:c.tilt,tilt_deg:c.tilt,camera_height_m:c.camH??null,
+        hfov_deg:c.fov,gps_accuracy_m:c.accuracy,kc_stage:c.stage,
+        footprint_width_m:c.fp?.w||null,footprint_depth_m:c.fp?.d||null,
+        footprint_far_capped:c.fp?.farCapped??null,
+        travel_bearing_deg:c.travelBrg??null,look_rel_travel_deg:c.lookRel??null,look_side:c.lookSide??null},
+      ...(c.poly?{fov_polygon:{type:'Polygon',coordinates:[c.poly]}}:{})}))};
+}
+function buildCSV(){
+  const h=['id','imgName','timestamp','project','lat','lon','altitude','accuracy_m','azimuth_deg','tilt_deg_from_nadir','camera_height_m','hfov_deg','kc_stage','fp_w_m','fp_d_m','heading_source','travel_bearing_deg','look_side'];
+  const r=S.caps.map(c=>[c.id,(c.imgName||c.id)+'.jpg',c.timestamp,c.project,c.lat,c.lon,c.altitude||'',c.accuracy||'',c.az,c.tilt,c.camH??'',c.fov,c.stage||'',c.fp?.w||'',c.fp?.d||'',c.headingSrc||'',c.travelBrg??'',c.lookSide||'']);
+  return[h,...r].map(x=>x.join(',')).join('\n');
+}
+function buildFootprintsGJ(){
+  const features = S.caps
+    .filter(c=>c.poly&&c.poly.length)
+    .map(c=>({
+      type:'Feature',
+      geometry:{type:'Polygon',coordinates:[c.poly]},
+      properties:{
+        id:c.id, imgName:(c.imgName||c.id)+'.jpg',
+        timestamp:c.timestamp, project:c.project,
+        heading_deg:c.az, azimuth_deg:c.az, heading_source:c.headingSrc||null,
+        tilt_deg_from_nadir:c.tilt, tilt_deg:c.tilt, camera_height_m:c.camH??null,
+        hfov_deg:c.fov,
+        kc_stage:c.stage,
+        footprint_width_m:c.fp?.w||null,
+        footprint_depth_m:c.fp?.d||null,
+        footprint_far_capped:c.fp?.farCapped??null,
+        travel_bearing_deg:c.travelBrg??null, look_rel_travel_deg:c.lookRel??null, look_side:c.lookSide??null,
+        capture_lat:c.lat, capture_lon:c.lon,
+      }
+    }));
+  return{type:'FeatureCollection',
+    metadata:{app:'CropView L1',version:'3.4.0',release:'LTR',project:S.proj.name,
+      description:'FOV ground footprint polygons for all captures. Use for satellite pixel sampling in Layer 2.',
+      exported:new Date().toISOString(),total:features.length},
+    features};
+}
+function doGeoJSON(){if(!S.caps.length){toast('No captures','err');return;}dlBlob(JSON.stringify(buildGJ(),null,2),(S.proj.name||'cv')+'_points_'+Date.now()+'.geojson','application/geo+json');toast('Points GeoJSON exported','ok');}
+function doFootprintsGJ(){if(!S.caps.length){toast('No captures','err');return;}dlBlob(JSON.stringify(buildFootprintsGJ(),null,2),(S.proj.name||'cv')+'_footprints_'+Date.now()+'.geojson','application/geo+json');toast('Footprints GeoJSON exported','ok');}
+function doCSV(){if(!S.caps.length){toast('No captures','err');return;}dlBlob(buildCSV(),(S.proj.name||'cv')+'_'+Date.now()+'.csv','text/csv');toast('CSV exported','ok');}
+function dlBlob(c,n,t){const b=new Blob([c],{type:t}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=n;a.click();URL.revokeObjectURL(u);}
+function doClear(){if(!S.caps.length)return;if(!confirm('Clear all '+S.caps.length+' captures?'))return;S.caps=[];saveCaps();S.capL.clearLayers();rendList();document.getElementById('cap-badge').textContent='0 cap';toast('Cleared');}
+
+/* ── PERSIST ── */
+function saveCaps(){
+  try{localStorage.setItem('cv_caps',JSON.stringify(S.caps.map(c=>({...c,full:null}))));
+      localStorage.setItem('cv_proj',JSON.stringify(S.proj));}catch(e){}
+}
+function loadCaps(){
+  try{
+    const s=localStorage.getItem('cv_caps');
+    if(s){S.caps=JSON.parse(s).filter(c=>c.project===S.proj.name);rendList();S.caps.forEach(c=>{if(c.lat&&c.lon)pinOnMap(c);});document.getElementById('cap-badge').textContent=S.caps.length+' cap';}
+  }catch(e){}
+}
+
+/* ── GPS STATUS MODAL ── */
+const gpsHistory = [];
+
+function openGPS(){
+  document.getElementById('gps-ov').classList.add('on');
+  updGPSModal();
+}
+function closeGPSDirect(){ document.getElementById('gps-ov').classList.remove('on'); }
+function closeGPS(e){ if(e.target===document.getElementById('gps-ov')) closeGPSDirect(); }
+
+// Called every GPS update — stores history
+function recordGPSHistory(acc){
+  gpsHistory.push(acc);
+  if(gpsHistory.length > 10) gpsHistory.shift();
+  if(document.getElementById('gps-ov').classList.contains('on')) updGPSModal();
+}
+
+function updGPSModal(){
+  const acc   = S.acc;
+  const alt   = S.alt;
+  const altAcc= S.altAcc || null;
+
+  // ── Ring ──
+  const ringMax = 100; // metres — clamp scale
+  const ringCirc = 327; // 2πr where r=52
+  const pct = acc ? Math.max(0, 1 - Math.min(acc, ringMax) / ringMax) : 0;
+  const offset = ringCirc - pct * ringCirc;
+  const ringEl = document.getElementById('ring-fill');
+  ringEl.style.strokeDashoffset = offset;
+  ringEl.style.stroke = acc < 5 ? '#4cff72' : acc < 15 ? '#f5c842' : '#ff4c4c';
+  document.getElementById('ring-acc-val').textContent = acc ? acc.toFixed(1) : '—';
+
+  // ── Fix badge ──
+  const badge = document.getElementById('fix-badge');
+  if(!acc){ badge.textContent='NO FIX'; badge.className=''; }
+  else if(acc < 5) { badge.textContent='EXCELLENT FIX'; badge.className='good'; }
+  else if(acc < 12){ badge.textContent='GOOD FIX';      badge.className='good'; }
+  else if(acc < 25){ badge.textContent='FAIR FIX';       badge.className='ok'; }
+  else             { badge.textContent='POOR FIX';       badge.className='poor'; }
+
+  // ── Estimated HDOP (accuracy / ~5 is a rough HDOP proxy) ──
+  const hdop = acc ? (acc / 5).toFixed(1) : null;
+
+  // ── Estimated satellites from accuracy ──
+  let estSats = '—', quality = '—';
+  if(acc){
+    if     (acc < 3)  { estSats = '12 – 15'; quality = 'Excellent (RTK-like)'; }
+    else if(acc < 6)  { estSats = '8 – 12';  quality = 'Excellent'; }
+    else if(acc < 12) { estSats = '6 – 9';   quality = 'Good'; }
+    else if(acc < 25) { estSats = '4 – 6';   quality = 'Fair'; }
+    else if(acc < 50) { estSats = '3 – 4';   quality = 'Poor'; }
+    else              { estSats = '< 3';      quality = 'Very Poor'; }
+  }
+
+  // ── Constellation bars (estimated from accuracy) ──
+  if(acc){
+    const q = Math.max(0, Math.min(1, 1 - (acc - 2) / 48));
+    document.getElementById('bar-gps').style.height = Math.round(55 + q*40) + '%';
+    document.getElementById('bar-glo').style.height = Math.round(40 + q*45) + '%';
+    document.getElementById('bar-gal').style.height = Math.round(20 + q*60) + '%';
+    document.getElementById('bar-bei').style.height = Math.round(15 + q*50) + '%';
+  } else {
+    ['bar-gps','bar-glo','bar-gal','bar-bei'].forEach(id => document.getElementById(id).style.height='5%');
+  }
+
+  // ── Metrics ──
+  const setGV = (id, val, warn) => {
+    const el = document.getElementById(id); if(!el) return;
+    el.textContent = val || '—';
+    el.className = 'gv' + (warn ? ' warn' : '') + (!val ? ' na' : '');
+  };
+  setGV('g-acc',     acc  ? '± ' + acc.toFixed(1) + ' m'         : null, acc > 20);
+  setGV('g-altacc',  altAcc ? '± ' + altAcc.toFixed(1) + ' m'    : 'not available');
+  setGV('g-hdop',    hdop ? '~' + hdop                            : null, hdop > 3);
+  setGV('g-quality', quality, acc > 20);
+  setGV('g-sats',    estSats);
+  setGV('g-alt',     alt  ? alt.toFixed(1) + ' m (WGS84)'        : null);
+  setGV('g-time',    S.lastGPSTime ? new Date(S.lastGPSTime).toLocaleTimeString() : null);
+
+  // ── History bars ──
+  const hist = document.getElementById('acc-history');
+  if(gpsHistory.length){
+    const maxH = Math.max(...gpsHistory, 1);
+    hist.innerHTML = gpsHistory.map(v => {
+      const h = Math.max(4, (v / maxH) * 34);
+      const col = v < 10 ? '#4cff72' : v < 25 ? '#f5c842' : '#ff4c4c';
+      return `<div class="acc-bar" style="height:${h}px;background:${col};flex:1;border-radius:2px"></div>`;
+    }).join('');
+  }
+
+  // ── Device info ──
+  const ua = navigator.userAgent;
+  let platform = 'Unknown', gnss = 'GPS', multiband = 'Unknown';
+  if(/iPhone|iPad/.test(ua)){
+    platform = 'iOS (Apple)';
+    gnss = 'GPS + GLONASS + Galileo + BeiDou';
+    multiband = /iPhone1[4-9]|iPhone2/.test(ua) ? 'Yes (L1 + L5)' : 'L1 only';
+  } else if(/Android/.test(ua)){
+    platform = 'Android';
+    gnss = 'GPS + GLONASS + Galileo + BeiDou';
+    multiband = 'Likely L1 (L5 on flagships)';
+  } else {
+    platform = 'Desktop / Unknown';
+    gnss = 'Varies (WiFi/cell fallback likely)';
+    multiband = 'N/A';
+  }
+  setGV('g-platform',  platform);
+  setGV('g-gnss',      gnss);
+  setGV('g-multiband', multiband);
+}
+
+/* ── ABOUT ── */
+function openAbout(){document.getElementById('about-ov').classList.add('on');}
+function closeAboutDirect(){document.getElementById('about-ov').classList.remove('on');}
+function closeAbout(e){if(e.target===document.getElementById('about-ov'))closeAboutDirect();}
+
+/* ── HELPERS ── */
+function switchTab(n){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===n));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===n+'-panel'));
+  if(n==='map'&&S.map){setTimeout(()=>{S.map.invalidateSize();if(S.lat)centerMe();},50);}
+  if(n==='data') updData();
+}
+function setDot(t){const d=document.getElementById('status-dot');d.className='';if(t)d.classList.add(t);}
+let tt;
+function toast(m,t=''){const e=document.getElementById('toast');e.textContent=m;e.className=t?'show '+t:'show';clearTimeout(tt);tt=setTimeout(()=>e.className='',2800);}
+
+updTilt();
+</script>
+</body>
+</html>
